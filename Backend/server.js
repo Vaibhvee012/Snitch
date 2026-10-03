@@ -5,14 +5,16 @@ import connectDB from "./src/config/db.js";
 const port = process.env.PORT || 3000;
 
 async function startServer() {
-  await connectDB();
+  try {
+    await connectDB();
 
-  app.listen(port, () => {
-    console.info(`Server is listening on port ${port}`);
-  });
+    app.listen(port, () => {
+      console.info(`Server is listening on port ${port}`);
+    });
+  } catch (error) {
+    console.error("Failed to start server:", error);
+    process.exit(1);
+  }
 }
 
-startServer().catch((error) => {
-  console.error("Failed to start server:", error);
-  process.exitCode = 1;
-});
+startServer();

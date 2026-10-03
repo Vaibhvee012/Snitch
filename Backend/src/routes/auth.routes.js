@@ -18,6 +18,7 @@ router.post("/register", validateRegisterUser, register);
 
 router.post("/login", validateLoginUser, login);
 
+// Google OAuth
 router.get(
   "/google",
   passport.authenticate("google", {
@@ -29,6 +30,7 @@ router.get(
   "/google/callback",
   passport.authenticate("google", {
     session: false,
+    failureRedirect: "http://localhost:5173/login",
   }),
   googleCallback
 );

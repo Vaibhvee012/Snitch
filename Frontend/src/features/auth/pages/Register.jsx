@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { useAuth } from "../hook/useAuth";
 import { useNavigate } from "react-router-dom";
+import ContinueWithGoogle from "../components/continueWithGoogle.jsx";
 
 const Register = () => {
   const { handleRegister } = useAuth();
@@ -59,6 +60,7 @@ const Register = () => {
         rel="stylesheet"
       />
 
+      {/* Main Container */}
       <div
         className="min-h-screen flex flex-col lg:flex-row selection:bg-[#C9A96E]/30"
         style={{
@@ -241,8 +243,8 @@ const Register = () => {
                 <label
                   htmlFor="reg-password"
                   className="text-[10px] uppercase tracking-[0.18em] font-medium"
-                  style={{ color: "#7A6E63" }}>
-
+                  style={{ color: "#7A6E63" }}
+                >
                   Password
                 </label>
 
@@ -258,17 +260,15 @@ const Register = () => {
                   className="w-full bg-transparent outline-none py-3 text-sm transition-colors duration-300"
                   style={inputStyle}
                   onFocus={handleFocus}
-                  onBlur={handleBlur}/>
+                  onBlur={handleBlur}
+                />
               </div>
 
               {/* Register as Seller */}
               <label
                 htmlFor="reg-isSeller"
-                className="flex items-center gap-4 cursor-pointer group">
-                <a href="/api/auth/google"
-                className="text-sm underline text-[#7A6E63] group-gover:text-[#FFD700] cursor-pointer select-none transition-colors duration-300">
-                  Continue with Google</a>
-
+                className="flex items-center gap-4 cursor-pointer group"
+              >
                 <div className="relative flex-shrink-0">
                   <input
                     id="reg-isSeller"
@@ -276,7 +276,8 @@ const Register = () => {
                     name="isSeller"
                     checked={formData.isSeller}
                     onChange={handleChange}
-                    className="peer sr-only"/>
+                    className="peer sr-only"
+                  />
 
                   <div
                     className="w-4 h-4 border transition-all duration-200 flex items-center justify-center peer-checked:border-[#C9A96E]"
@@ -286,20 +287,23 @@ const Register = () => {
                         : "#d0c5b5",
                       backgroundColor: formData.isSeller
                         ? "#C9A96E"
-                        : "transparent",}}>
-                          
+                        : "transparent",
+                    }}
+                  >
                     {formData.isSeller && (
                       <svg
                         className="w-2.5 h-2.5"
                         viewBox="0 0 12 12"
-                        fill="none">
-
+                        fill="none"
+                      >
                         <path
                           d="M2 6l3 3 5-5"
                           stroke="#fbf9f6"
                           strokeWidth="1.5"
                           strokeLinecap="round"
-                          strokeLinejoin="round"/></svg>
+                          strokeLinejoin="round"
+                        />
+                      </svg>
                     )}
                   </div>
                 </div>
@@ -307,7 +311,9 @@ const Register = () => {
                 <span
                   className="text-[11px] uppercase tracking-[0.15em] transition-colors duration-200"
                   style={{
-                    color: formData.isSeller ? "#C9A96E" : "#7A6E63",}}>
+                    color: formData.isSeller ? "#C9A96E" : "#7A6E63",
+                  }}
+                >
                   Register as Seller
                 </span>
               </label>
@@ -319,41 +325,48 @@ const Register = () => {
                 style={{
                   backgroundColor: "#1b1c1a",
                   color: "#fbf9f6",
-                  fontFamily: "'Inter', sans-serif",}}
-
+                  fontFamily: "'Inter', sans-serif",
+                }}
                 onMouseEnter={(e) => {
                   e.currentTarget.style.backgroundColor = "#C9A96E";
-                  e.currentTarget.style.color = "#1b1c1a";}}
-
+                  e.currentTarget.style.color = "#1b1c1a";
+                }}
                 onMouseLeave={(e) => {
                   e.currentTarget.style.backgroundColor = "#1b1c1a";
-                  e.currentTarget.style.color = "#fbf9f6";}}>
-
+                  e.currentTarget.style.color = "#fbf9f6";
+                }}
+              >
                 Sign Up
               </button>
+
+              {/* Google Login */}
+              <ContinueWithGoogle />
 
               {/* Divider */}
               <div className="flex items-center gap-4">
                 <div
                   className="flex-1 h-px"
-                  style={{ backgroundColor: "#e4e2df" }}/>
+                  style={{ backgroundColor: "#e4e2df" }}
+                />
 
                 <span
                   className="text-[10px] uppercase tracking-[0.15em]"
-                  style={{ color: "#B5ADA3" }}>
+                  style={{ color: "#B5ADA3" }}
+                >
                   or
                 </span>
 
                 <div
                   className="flex-1 h-px"
-                  style={{ backgroundColor: "#e4e2df" }}/>
+                  style={{ backgroundColor: "#e4e2df" }}
+                />
               </div>
 
               {/* Footer Link */}
               <p
                 className="text-center text-[11px]"
-                style={{ color: "#B5ADA3" }}>
-
+                style={{ color: "#B5ADA3" }}
+              >
                 Already have an account?{" "}
                 <a
                   href="/login"
@@ -368,8 +381,8 @@ const Register = () => {
                   }
                   onMouseLeave={(e) =>
                     (e.target.style.color = "#7A6E63")
-                  }>
-                    
+                  }
+                >
                   Sign in
                 </a>
               </p>
