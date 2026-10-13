@@ -18,6 +18,12 @@ if(!process.env.GOOGLE_CLIENT_SECRET) {
     throw new Error("GOOGLE_CLIENT_SECRET is not set");
 }
 
+if(!process.env.IMAGEKIT_PRIVATE_KEY) {
+    throw new Error("IMAGEKIT_PRIVATE_KEY is not defined in enviornment variables");
+}
+
+
+
 export const config = {
     MONGO_URI: process.env.MONGO_URI,
     JWT_SECRET: process.env.JWT_SECRET,
