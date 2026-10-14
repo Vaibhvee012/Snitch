@@ -14,9 +14,10 @@ export const useProduct = () =>{
 
 
    async function handleGetSellerProduct(){
-    const data =  await getSellerProfuct()
-    disptach(setSellerProducts(data.products))
-    return data.products
+    const data = await getSellerProduct();
+    const products = data.products || (data.product ? [data.product] : (Array.isArray(data) ? data : []));
+    dispatch(setSellerProducts(data));
+    return products;
    }
 
    return {handleCreateProduct, handleGetSellerProduct}
