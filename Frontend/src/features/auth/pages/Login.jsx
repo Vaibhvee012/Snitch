@@ -1,3 +1,4 @@
+
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../hook/useAuth";
@@ -5,13 +6,22 @@ import { useAuth } from "../hook/useAuth";
 const Login = () => {
   const { handleLogin } = useAuth();
   const navigate = useNavigate();
-  const [formData, setFormData] = useState({ email: "", password: "" });
+
+  const [formData, setFormData] = useState({
+    email: "",
+    password: "",
+  });
+
   const [errorMessage, setErrorMessage] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const handleChange = (event) => {
     const { name, value } = event.target;
-    setFormData((previous) => ({ ...previous, [name]: value }));
+
+    setFormData((previous) => ({
+      ...previous,
+      [name]: value,
+    }));
   };
 
   const handleSubmit = async (event) => {
@@ -20,8 +30,15 @@ const Login = () => {
     setIsSubmitting(true);
 
     try {
-      await handleLogin(formData);
-      navigate("/");
+      const data = await handleLogin(formData);
+
+      if (data?.user?.role === "seller") {
+        navigate("/seller/dashboard");
+      } else if (data?.user) {
+        navigate("/");
+      } else {
+        setErrorMessage("Unable to retrieve user information.");
+      }
     } catch (error) {
       setErrorMessage(
         error.response?.data?.message ||
@@ -50,7 +67,7 @@ const Login = () => {
   return (
     <>
       <link
-        href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;1,300;1,400&family=Inter:wght@300;400;500;600&display=swap"
+        href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;0,600;1,300;1,400&family=Inter:wght@300;400;500;600&display=swap"
         rel="stylesheet"
       />
 
@@ -67,11 +84,12 @@ const Login = () => {
           aria-label="Snitch fashion editorial"
         >
           <img
-            src="/snitch_editorial_warm.jpg"
+            src="/login.jpg"
             alt="Snitch fashion editorial"
             className="absolute inset-0 w-full h-full object-cover object-top"
             style={{ filter: "brightness(0.97)" }}
           />
+
           <div
             className="absolute inset-0"
             style={{
@@ -79,6 +97,7 @@ const Login = () => {
                 "linear-gradient(to top, rgba(27,24,20,0.62) 0%, rgba(27,24,20,0.08) 45%, transparent 100%)",
             }}
           />
+
           <div className="absolute inset-0 p-10 xl:p-14 flex flex-col justify-between z-10">
             <span
               className="text-sm font-medium tracking-[0.35em] uppercase"
@@ -89,6 +108,7 @@ const Login = () => {
             >
               Snitch.
             </span>
+
             <div>
               <p
                 className="text-5xl xl:text-6xl font-light leading-[1.08] text-white mb-5"
@@ -98,6 +118,7 @@ const Login = () => {
                 <br />
                 <em>back.</em>
               </p>
+
               <p
                 className="text-sm font-light leading-relaxed max-w-xs"
                 style={{ color: "rgba(255,255,255,0.65)" }}
@@ -132,6 +153,7 @@ const Login = () => {
               >
                 Welcome back to Snitch
               </p>
+
               <h1
                 className="text-[2.6rem] xl:text-5xl font-light leading-[1.1]"
                 style={{
@@ -143,7 +165,10 @@ const Login = () => {
               </h1>
             </header>
 
-            <form onSubmit={handleSubmit} className="flex flex-col gap-8 sm:gap-9">
+            <form
+              onSubmit={handleSubmit}
+              className="flex flex-col gap-8 sm:gap-9"
+            >
               <div className="flex flex-col gap-2">
                 <label
                   htmlFor="login-email"
@@ -152,6 +177,7 @@ const Login = () => {
                 >
                   Email Address
                 </label>
+
                 <input
                   id="login-email"
                   type="email"
@@ -176,6 +202,7 @@ const Login = () => {
                 >
                   Password
                 </label>
+
                 <input
                   id="login-password"
                   type="password"
@@ -230,19 +257,24 @@ const Login = () => {
                   className="flex-1 h-px"
                   style={{ backgroundColor: "#e4e2df" }}
                 />
+
                 <span
                   className="text-[10px] uppercase tracking-[0.15em]"
                   style={{ color: "#B5ADA3" }}
                 >
                   or
                 </span>
+
                 <div
                   className="flex-1 h-px"
                   style={{ backgroundColor: "#e4e2df" }}
                 />
               </div>
 
-              <p className="text-center text-[11px]" style={{ color: "#B5ADA3" }}>
+              <p
+                className="text-center text-[11px]"
+                style={{ color: "#B5ADA3" }}
+              >
                 New to Snitch?{" "}
                 <Link
                   to="/register"

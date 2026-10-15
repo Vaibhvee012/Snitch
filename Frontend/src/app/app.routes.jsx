@@ -1,8 +1,9 @@
-﻿import { createBrowserRouter } from "react-router-dom";
+﻿import { createBrowserRouter, Navigate } from "react-router-dom";
 import Register from "../features/auth/pages/Register.jsx";
 import Login from "../features/auth/pages/Login.jsx";
 import CreateProduct from "../features/products/pages/CreateProduct.jsx";
 import Dashboard from "../features/products/pages/Dashboard.jsx";
+import Proctected from "../features/auth/components/Proctected.jsx";
 
 export const routes = createBrowserRouter([
   {
@@ -18,16 +19,32 @@ export const routes = createBrowserRouter([
     element: <Login />,
   },
   {
+    path: "/dashboard",
+    element: <Navigate to="/seller/dashboard" replace />,
+  },
+  {
+    path: "/create-product",
+    element: <Navigate to="/seller/create-product" replace />,
+  },
+  {
     path: "/seller",
-    children:[
+    children: [
       {
-        path:"/seller/create-product",
-        element:<CreateProduct />
+        path: "create-product",
+        element: (
+          <Proctected role="seller">
+            <CreateProduct />
+          </Proctected>
+        ),
       },
       {
-        path:"/seller/dashboard",
-        element:<Dashboard />
-      }
+        path: "dashboard",
+        element: (
+          <Proctected role="seller">
+            <Dashboard />
+          </Proctected>
+        ),
+      },
     ],
   },
 ]);
