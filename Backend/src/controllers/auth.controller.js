@@ -1,4 +1,4 @@
-import userModel from "../models/user.model.js";
+import UserModel from "./models/user.model.js";
 import jwt from "jsonwebtoken";
 import { config } from "../config/config.js";
 
@@ -38,7 +38,7 @@ export const register = async (req, res) => {
     } = req.body;
 
     try {
-        const existingUser = await userModel.findOne({
+        const existingUser = await UserModel.findOne({
             $or: [
                 { email },
                 { contact },
@@ -51,7 +51,7 @@ export const register = async (req, res) => {
             });
         }
 
-        const user = await userModel.create({
+        const user = await UserModel.create({
             email,
             contact,
             fullname,
@@ -74,37 +74,55 @@ export const register = async (req, res) => {
     }
 };
 
-export const login = async(req, res)=>{
-    const {email, password} = req.body;
-    
-    const user = await userModel.findOne({email});
+export const login = async (req, res) => {
+    try {
+        const { email, password } = req.body;
 
-    if(!user){
-        return res.status(400).json({
-            message: "User not found"
+        if (!email || !password) {
+            return res.status(400).json({
+                success: false,
+                message: "Email and password are required",
+            });
+        }
+
+        const user = await UserModel.findOne({ email });
+
+        if (!user) {
+            return res.status(400).json({
+                success: false,
+                message: "Invalid email or password",
+            });
+        }
+
+        const isMatch = await user.comparePassword(password);
+
+        if (!isMatch) {
+            return res.status(400).json({
+                success: false,
+                message: "Invalid email or password",
+            });
+        }
+
+        await sendTokenResponse(user, res, "User login successful");
+    } catch (error) {
+        console.error("Login error:", error);
+
+        return res.status(500).json({
+            success: false,
+            message: "Server error",
         });
     }
-
-    const isMatch = await user.comparePassword(password);
-
-    if(!isMatch){
-        return res.status(400).json({
-            message: "Invalid email or password"
-        });
-    }
-
-    await sendTokenResponse(user, res, "User login successful");
-};  
+};
 
 export const googleCallback = async (req, res) => {
     const { id, displayName, emails } = req.user;
 
     const email = emails[0].value;
 
-    let user = await userModel.findOne({ email });
+    let user = await UserModel.findOne({ email });
 
     if (!user) {
-        user = await userModel.create({
+        user = await UserModel.create({
             email,
             googleId: id,
             fullname: displayName,

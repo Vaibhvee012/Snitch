@@ -1,14 +1,21 @@
-﻿import { createBrowserRouter, Navigate } from "react-router-dom";
+import { createBrowserRouter, Navigate } from "react-router-dom";
 import Register from "../features/auth/pages/Register.jsx";
 import Login from "../features/auth/pages/Login.jsx";
 import CreateProduct from "../features/products/pages/CreateProduct.jsx";
 import Dashboard from "../features/products/pages/Dashboard.jsx";
 import Proctected from "../features/auth/components/Proctected.jsx";
+import Home from "../features/products/pages/Home.jsx"
+import ProductDetails from "../features/products/pages/ProductDetail.jsx";
+import SellerProductDetails from "../features/products/pages/SellerProductDetail.jsx";
 
 export const routes = createBrowserRouter([
   {
     path: "/",
-    element: <h1>Hello World</h1>,
+    element: <Home/>,
+  },
+  {
+    path: "/home",
+    element: <Navigate to="/" replace />,
   },
   {
     path: "/register",
@@ -17,6 +24,14 @@ export const routes = createBrowserRouter([
   {
     path: "/login",
     element: <Login />,
+  },
+  {
+    path: "/products/:productId",
+    element: <ProductDetails />,
+  },
+  {
+    path: "/product/:productId",
+    element: <ProductDetails />,
   },
   {
     path: "/dashboard",
@@ -30,7 +45,7 @@ export const routes = createBrowserRouter([
     path: "/seller",
     children: [
       {
-        path: "create-product",
+        path: "/seller/create-product",
         element: (
           <Proctected role="seller">
             <CreateProduct />
@@ -38,10 +53,18 @@ export const routes = createBrowserRouter([
         ),
       },
       {
-        path: "dashboard",
+        path: "/seller/dashboard",
         element: (
           <Proctected role="seller">
             <Dashboard />
+          </Proctected>
+        ),
+      },
+      {
+        path: "/seller/product/:productId",
+        element: (
+          <Proctected role="seller">
+            <SellerProductDetails />
           </Proctected>
         ),
       },

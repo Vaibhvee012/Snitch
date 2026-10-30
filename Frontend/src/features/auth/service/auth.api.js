@@ -37,3 +37,5 @@ export async function getMe(){
   return response.data
 }
 
+export const loginUser = (data) =>
+  authApiInstance.post("/login", data);

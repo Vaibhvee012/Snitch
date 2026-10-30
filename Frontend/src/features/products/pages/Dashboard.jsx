@@ -504,6 +504,7 @@ const Dashboard = () => {
 
                 return (
                   <article
+                  onClick={()=> {navigate(`/seller/product/${product._id}`)}}
                     key={product._id || product.title}
                     onClick={() => openQuickView(product)}
                     className="group bg-white border border-[#ede9e3] hover:border-[#d0c5b5] transition-all duration-300 flex flex-col overflow-hidden hover:shadow-lg cursor-pointer"
