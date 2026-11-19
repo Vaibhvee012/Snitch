@@ -89,135 +89,55 @@ export async function getProductDetails(req,res){
 export const getProductById = getProductDetails;
 
 export async function addProductVariant(req, res) {
-    try {
-        const { id } = req.params;
-        const { attributes, price, stock, images } = req.body;
 
-        if (!id || !mongoose.Types.ObjectId.isValid(id)) {
-            return res.status(400).json({
-                message: "Invalid product ID",
-                success: false,
-            });
-        }
+    const productId = req.params.productId;
 
-        const product = await ProductModel.findById(id);
-        if (!product) {
-            return res.status(404).json({
-                message: "Product not found",
-                success: false,
-            });
-        }
+    const product = await productModel.findOne({
+        _id: productId,
+        seller: req.user._id
+    });
 
-        const newVariant = {
-            attributes: attributes || {},
-            price: {
-                amount: price?.amount !== undefined ? Number(price.amount) : Number(product.price.amount),
-                currency: price?.currency || product.price.currency || "INR",
-            },
-            stock: stock !== undefined ? Number(stock) : 0,
-            images: Array.isArray(images) && images.length > 0 
-                ? images 
-                : (product.images?.length > 0 ? [{ url: product.images[0].url }] : []),
-        };
-
-        product.variants.push(newVariant);
-        await product.save();
-
-        const createdVariant = product.variants[product.variants.length - 1];
-
-        return res.status(201).json({
-            message: "Variant added successfully",
-            success: true,
-            variant: createdVariant,
-            product,
-        });
-    } catch (error) {
-        console.error("Error adding variant:", error);
-        return res.status(500).json({
-            message: error.message || "Failed to add variant",
-            success: false,
-        });
+    if (!product) {
+        return res.status(404).json({
+            message: "Product not found",
+            success: false
+        })
     }
-}
 
-export async function updateVariantStock(req, res) {
-    try {
-        const { id, variantId } = req.params;
-        const { stock } = req.body;
-
-        if (!id || !mongoose.Types.ObjectId.isValid(id)) {
-            return res.status(400).json({
-                message: "Invalid product ID",
-                success: false,
-            });
-        }
-
-        const product = await ProductModel.findById(id);
-        if (!product) {
-            return res.status(404).json({
-                message: "Product not found",
-                success: false,
-            });
-        }
-
-        const variant = product.variants.id(variantId);
-        if (!variant) {
-            return res.status(404).json({
-                message: "Variant not found",
-                success: false,
-            });
-        }
-
-        variant.stock = Math.max(0, Number(stock));
-        await product.save();
-
-        return res.status(200).json({
-            message: "Variant stock updated successfully",
-            success: true,
-            variant,
-            product,
-        });
-    } catch (error) {
-        console.error("Error updating variant stock:", error);
-        return res.status(500).json({
-            message: error.message || "Failed to update variant stock",
-            success: false,
-        });
+    const files = req.files;
+    const images = [];
+    if (files || files.length !== 0) {
+        (await Promise.all(files.map(async (file) => {
+            const image = await uploadFile({
+                buffer: file.buffer,
+                fileName: file.originalname
+            })
+            return image
+        }))).map(image => images.push(image))
     }
-}
 
-export async function deleteProductVariant(req, res) {
-    try {
-        const { id, variantId } = req.params;
+    const price = req.body.priceAmount
+    const stock = req.body.stock
+    const attributes = JSON.parse(req.body.attributes || "{}")
 
-        if (!id || !mongoose.Types.ObjectId.isValid(id)) {
-            return res.status(400).json({
-                message: "Invalid product ID",
-                success: false,
-            });
-        }
+    console.log(price)
 
-        const product = await ProductModel.findById(id);
-        if (!product) {
-            return res.status(404).json({
-                message: "Product not found",
-                success: false,
-            });
-        }
+    product.variants.push({
+        images,
+        price: {
+            amount: Number(price) || product.price.amount,
+            currency: req.body.priceCurrency || product.price.currency
+        },
+        stock,
+        attributes
+    })
 
-        product.variants.pull({ _id: variantId });
-        await product.save();
+    await product.save();
 
-        return res.status(200).json({
-            message: "Variant removed successfully",
-            success: true,
-            product,
-        });
-    } catch (error) {
-        console.error("Error deleting variant:", error);
-        return res.status(500).json({
-            message: error.message || "Failed to delete variant",
-            success: false,
-        });
-    }
+    return res.status(200).json({
+        message: "Product variant added successfully",
+        success: true,
+        product
+    })
+
 }

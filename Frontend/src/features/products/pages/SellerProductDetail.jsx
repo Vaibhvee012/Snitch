@@ -13,6 +13,28 @@ const POPULAR_COLORS = [
   { name: "Light Wash", hex: "#8DA9C4" },
 ];
 
+// Helper to normalize attributes to always be a plain Object
+const normalizeAttributes = (attr) => {
+  if (!attr) return {};
+  if (typeof attr === "object" && !Array.isArray(attr)) {
+    return attr;
+  }
+  if (Array.isArray(attr)) {
+    const obj = {};
+    attr.forEach((item) => {
+      if (item && typeof item === "object") {
+        if ("key" in item && "value" in item) {
+          if (item.key) obj[item.key] = item.value;
+        } else {
+          Object.assign(obj, item);
+        }
+      }
+    });
+    return obj;
+  }
+  return {};
+};
+
 // LocalStorage helpers
 const getLocalVariantsKey = (productId) => `snitch_variants_${productId}`;
 
@@ -21,7 +43,12 @@ const loadLocalVariants = (productId) => {
     const raw = localStorage.getItem(getLocalVariantsKey(productId));
     if (raw) {
       const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed)) return parsed;
+      if (Array.isArray(parsed)) {
+        return parsed.map((v) => ({
+          ...v,
+          attributes: normalizeAttributes(v.attributes),
+        }));
+      }
     }
   } catch (err) {
     console.warn("Failed to load local variants from localStorage:", err);
@@ -43,8 +70,6 @@ const SellerProductDetails = () => {
   const {
     handleGetProductById,
     handleAddVariant,
-    handleUpdateVariantStock,
-    handleDeleteVariant,
   } = useProduct();
 
   // State
@@ -53,11 +78,11 @@ const SellerProductDetails = () => {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [selectedMainImg, setSelectedMainImg] = useState(0);
   const [errorMsg, setErrorMsg] = useState("");
-  const [toast, setToast] = useState(null); // { type: 'success'|'error', text: string }
+  const [toast, setToast] = useState(null);
 
   // Search & Filter
   const [searchQuery, setSearchQuery] = useState("");
-  const [stockFilter, setStockFilter] = useState("all"); // 'all' | 'in_stock' | 'low_stock' | 'out_of_stock'
+  const [stockFilter, setStockFilter] = useState("all");
   const [sortBy, setSortBy] = useState("default");
 
   // Create Variant Modal State
@@ -70,16 +95,16 @@ const SellerProductDetails = () => {
   const [modalValidationErr, setModalValidationErr] = useState("");
   const fileInputRef = useRef(null);
 
-  // Variant Attributes state (At least one attribute is REQUIRED)
-  const [attributes, setAttributes] = useState([
-    { key: "Size", value: "30" },
-    { key: "Color", value: "Vintage Blue" },
-  ]);
+  // Variant Attributes state MUST BE AN OBJECT: { [key]: value }
+  const [attributes, setAttributes] = useState({
+    Size: "30",
+    Color: "Vintage Blue",
+  });
 
-  // Image Gallery Viewer Modal for variant with multiple images
+  // Modal Image Gallery Viewer
   const [viewingVariantImages, setViewingVariantImages] = useState(null);
 
-  // Quick Inline Stock State Tracking (for instant responsiveness)
+  // Quick Inline Stock State Tracking
   const [updatingStockIds, setUpdatingStockIds] = useState(new Set());
   const [deleteConfirmId, setDeleteConfirmId] = useState(null);
   const [copiedId, setCopiedId] = useState(false);
@@ -95,10 +120,15 @@ const SellerProductDetails = () => {
   // Synchronize variants state and save to local storage
   const updateAndPersistVariants = useCallback(
     (newVariants) => {
+      const sanitized = newVariants.map((v) => ({
+        ...v,
+        attributes: normalizeAttributes(v.attributes),
+      }));
+
       setProduct((prev) => {
         if (!prev) return prev;
-        const updated = { ...prev, variants: newVariants };
-        persistLocalVariants(productId, newVariants);
+        const updated = { ...prev, variants: sanitized };
+        persistLocalVariants(productId, sanitized);
         return updated;
       });
     },
@@ -108,52 +138,60 @@ const SellerProductDetails = () => {
   // Fetch product data & merge with local storage
   const loadProduct = useCallback(
     async (showLoading = true) => {
+      if (!productId) {
+        setErrorMsg("Product ID is missing from the URL.");
+        setIsLoading(false);
+        return;
+      }
+
       if (showLoading) setIsLoading(true);
       setErrorMsg("");
+
       try {
         const data = await handleGetProductById(productId);
         const resolvedProduct = data?.product || data;
-        if (resolvedProduct) {
-          // Check if we have local stored variants for this product
+
+        if (resolvedProduct && (resolvedProduct._id || resolvedProduct.title)) {
           const localVariants = loadLocalVariants(productId);
 
-          const finalVariants = localVariants !== null
-            ? localVariants
-            : (resolvedProduct.variants || []);
+          const rawVariants =
+            localVariants !== null
+              ? localVariants
+              : resolvedProduct.variants || [];
+
+          const normalizedVariants = rawVariants.map((v) => ({
+            ...v,
+            attributes: normalizeAttributes(v.attributes),
+          }));
 
           setProduct({
             ...resolvedProduct,
-            variants: finalVariants,
+            variants: normalizedVariants,
           });
 
           // Save to local storage if not already saved
-          if (localVariants === null && finalVariants.length > 0) {
-            persistLocalVariants(productId, finalVariants);
+          if (localVariants === null && normalizedVariants.length > 0) {
+            persistLocalVariants(productId, normalizedVariants);
           }
+          setErrorMsg("");
         } else {
-          setErrorMsg("Product could not be retrieved.");
+          setErrorMsg("Product could not be found or returned an invalid format.");
         }
       } catch (err) {
-        console.error("Failed to load product details", err);
-        // Fallback to local storage if API fails completely
-        const localVariants = loadLocalVariants(productId);
-        if (localVariants) {
-          setProduct((prev) => ({
-            _id: productId,
-            title: "Product (Local Mode)",
-            description: "Showing cached inventory data from local state.",
-            price: { amount: "1499", currency: "INR" },
-            images: [],
-            variants: localVariants,
-            ...prev,
-          }));
-        } else {
-          setErrorMsg(
-            err.response?.data?.message ||
-              err.message ||
-              "Unable to connect to server. Please try again."
-          );
+        console.error("Failed to load product details:", err);
+        const status = err.response?.status;
+        const serverMsg = err.response?.data?.message;
+
+        let message = serverMsg || err.message || "Failed to load product details.";
+        if (err.code === "ERR_NETWORK" || !err.response) {
+          message = `Unable to connect to the backend server. The request to GET /api/products/details/${productId} failed (Network Error). Please verify that the backend server is running.`;
+        } else if (status === 404) {
+          message = `Product with ID "${productId}" was not found (404).`;
+        } else if (status === 401 || status === 403) {
+          message = "Authentication error: You do not have permission to view or manage this product.";
         }
+
+        setErrorMsg(message);
       } finally {
         setIsLoading(false);
         setIsRefreshing(false);
@@ -163,8 +201,8 @@ const SellerProductDetails = () => {
   );
 
   useEffect(() => {
-    loadProduct();
-  }, [loadProduct]);
+    loadProduct(true);
+  }, [productId]);
 
   // Statistics calculation
   const stats = useMemo(() => {
@@ -179,7 +217,6 @@ const SellerProductDetails = () => {
     ).length;
     const inStockCount = totalVariants - outOfStockCount;
 
-    // Approximate inventory valuation
     const totalValue = variants.reduce((acc, v) => {
       const p = Number(v.price?.amount || product?.price?.amount || 0);
       return acc + p * (Number(v.stock) || 0);
@@ -200,10 +237,10 @@ const SellerProductDetails = () => {
     if (!product?.variants) return [];
     return product.variants
       .filter((variant) => {
-        // Search filter
+        const attrs = normalizeAttributes(variant.attributes);
         if (searchQuery.trim()) {
           const q = searchQuery.toLowerCase();
-          const attrMatch = Object.entries(variant.attributes || {}).some(
+          const attrMatch = Object.entries(attrs).some(
             ([k, v]) =>
               k.toLowerCase().includes(q) || String(v).toLowerCase().includes(q)
           );
@@ -212,7 +249,6 @@ const SellerProductDetails = () => {
           if (!attrMatch && !priceMatch && !idMatch) return false;
         }
 
-        // Stock status filter
         const stock = Number(variant.stock) || 0;
         if (stockFilter === "in_stock" && stock <= 0) return false;
         if (stockFilter === "low_stock" && (stock <= 0 || stock > 10)) return false;
@@ -234,35 +270,19 @@ const SellerProductDetails = () => {
       });
   }, [product, searchQuery, stockFilter, sortBy]);
 
-  // Handle Single Stock Change (Saves locally & syncs)
-  const handleStockUpdate = async (variantId, newStock) => {
+  // Handle Single Stock Change (Saves locally)
+  const handleStockUpdate = (variantId, newStock) => {
     const sanitizedStock = Math.max(0, parseInt(newStock, 10) || 0);
 
-    // Update in React state & LocalStorage
     const currentVariants = product?.variants || [];
     const updatedVariants = currentVariants.map((v) =>
       v._id === variantId ? { ...v, stock: sanitizedStock } : v
     );
     updateAndPersistVariants(updatedVariants);
-
-    setUpdatingStockIds((prev) => new Set(prev).add(variantId));
-
-    try {
-      await handleUpdateVariantStock(productId, variantId, sanitizedStock);
-      showToast("Stock quantity updated and saved locally");
-    } catch (err) {
-      // Local storage already has it, notify user
-      showToast("Stock updated locally", "success");
-    } finally {
-      setUpdatingStockIds((prev) => {
-        const next = new Set(prev);
-        next.delete(variantId);
-        return next;
-      });
-    }
+    showToast("Stock quantity updated locally");
   };
 
-  // Convert File to Base64 Data URL so it can be stored in LocalStorage
+  // Convert File to Base64 Data URL for LocalStorage
   const readFileAsDataUrl = (file) => {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
@@ -313,6 +333,49 @@ const SellerProductDetails = () => {
     });
   };
 
+  // Attribute Object Manipulation Helpers (Object: { [key]: value })
+  const handleAttributeValueChange = (key, value) => {
+    setAttributes((prev) => ({
+      ...prev,
+      [key]: value,
+    }));
+  };
+
+  const handleAttributeKeyRename = (oldKey, newKey) => {
+    setAttributes((prev) => {
+      const next = {};
+      Object.entries(prev).forEach(([k, v]) => {
+        if (k === oldKey) {
+          next[newKey] = v;
+        } else {
+          next[k] = v;
+        }
+      });
+      return next;
+    });
+  };
+
+  const handleRemoveAttribute = (keyToRemove) => {
+    setAttributes((prev) => {
+      const next = { ...prev };
+      delete next[keyToRemove];
+      return next;
+    });
+  };
+
+  const handleAddNewAttributeKey = () => {
+    // Generate a default empty or numbered key name
+    let candidate = "CustomField";
+    let counter = 1;
+    while (candidate in attributes) {
+      candidate = `CustomField${counter++}`;
+    }
+    setAttributes((prev) => ({
+      ...prev,
+      [candidate]: "",
+    }));
+  };
+
   // Handle Add Variant Submit
   const handleCreateVariant = async (e) => {
     e.preventDefault();
@@ -321,16 +384,17 @@ const SellerProductDetails = () => {
 
     try {
       // 1. Validate: At least one attribute is REQUIRED
-      const validAttributes = {};
-      attributes.forEach((attr) => {
-        const key = attr.key.trim();
-        const value = attr.value.trim();
+      // Clean up empty keys and values into a strict plain Object
+      const cleanAttributesObject = {};
+      Object.entries(attributes).forEach(([k, v]) => {
+        const key = k.trim();
+        const value = String(v).trim();
         if (key && value) {
-          validAttributes[key] = value;
+          cleanAttributesObject[key] = value;
         }
       });
 
-      if (Object.keys(validAttributes).length === 0) {
+      if (Object.keys(cleanAttributesObject).length === 0) {
         setModalValidationErr("At least one attribute is required (e.g. Size or Color).");
         setIsSubmittingVariant(false);
         return;
@@ -338,11 +402,11 @@ const SellerProductDetails = () => {
 
       // Check for duplicate attributes combination
       const isDuplicate = product?.variants?.some((v) => {
-        const vAttrs = v.attributes || {};
+        const vAttrs = normalizeAttributes(v.attributes);
         const vKeys = Object.keys(vAttrs);
-        const newKeys = Object.keys(validAttributes);
+        const newKeys = Object.keys(cleanAttributesObject);
         if (vKeys.length !== newKeys.length) return false;
-        return newKeys.every((k) => vAttrs[k] === validAttributes[k]);
+        return newKeys.every((k) => vAttrs[k] === cleanAttributesObject[k]);
       });
 
       if (isDuplicate) {
@@ -351,8 +415,7 @@ const SellerProductDetails = () => {
         return;
       }
 
-      // 2. Price is OPTIONAL:
-      // If provided, use variantPrice; otherwise fall back to product base price or leave undefined
+      // 2. Price is OPTIONAL
       let resolvedPrice;
       if (variantPrice && !isNaN(Number(variantPrice)) && Number(variantPrice) >= 0) {
         resolvedPrice = {
@@ -369,26 +432,26 @@ const SellerProductDetails = () => {
       }
 
       // 3. Images are OPTIONAL (up to 7 images)
-      // Formatted as array of { url: string }
       const resolvedImages = variantImages.map((url) => ({ url }));
 
+      // 4. Construct Variant Record with attributes as pure Object
       const newVariant = {
         _id: `var_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`,
-        attributes: validAttributes,
+        attributes: cleanAttributesObject, // STRICT PLAIN OBJECT
         price: resolvedPrice,
         stock: Math.max(0, parseInt(variantStock, 10) || 0),
         images: resolvedImages,
         createdAt: new Date().toISOString(),
       };
 
-      // 4. Store State Locally
+      // 5. Store State Locally
       const currentList = product?.variants || [];
       const updatedList = [...currentList, newVariant];
       updateAndPersistVariants(updatedList);
 
       showToast("Variant created and saved to local state");
 
-      // Optional background sync with API
+      // Optional background sync with backend API
       try {
         await handleAddVariant(productId, {
           attributes: newVariant.attributes,
@@ -405,10 +468,10 @@ const SellerProductDetails = () => {
       setVariantPrice("");
       setVariantStock("10");
       setVariantImages([]);
-      setAttributes([
-        { key: "Size", value: "32" },
-        { key: "Color", value: "Vintage Blue" },
-      ]);
+      setAttributes({
+        Size: "32",
+        Color: "Vintage Blue",
+      });
     } catch (err) {
       console.error("Failed to create variant:", err);
       setModalValidationErr(err.message || "Failed to create variant.");
@@ -417,28 +480,21 @@ const SellerProductDetails = () => {
     }
   };
 
-  // Handle Delete Variant (Saves locally & syncs)
-  const handleDeleteVariantAction = async (variantId) => {
-    try {
-      const currentList = product?.variants || [];
-      const updatedList = currentList.filter((v) => v._id !== variantId);
-      updateAndPersistVariants(updatedList);
-      setDeleteConfirmId(null);
-      showToast("Variant removed from local catalog");
-
-      // Optional backend sync
-      await handleDeleteVariant(productId, variantId).catch(() => {});
-    } catch (err) {
-      console.warn("Delete action caught:", err);
-    }
+  // Handle Delete Variant (Saves locally)
+  const handleDeleteVariantAction = (variantId) => {
+    const currentList = product?.variants || [];
+    const updatedList = currentList.filter((v) => v._id !== variantId);
+    updateAndPersistVariants(updatedList);
+    setDeleteConfirmId(null);
+    showToast("Variant removed from local catalog");
   };
 
-  // Quick Batch Size Matrix Generator (Helper for Sellers)
+  // Quick Batch Size Matrix Generator
   const handleGenerateStandardSizes = async () => {
     const defaultColor = "Default";
     const standardSizes = ["S", "M", "L", "XL"];
     const existingSizes = new Set(
-      (product?.variants || []).map((v) => v.attributes?.Size)
+      (product?.variants || []).map((v) => normalizeAttributes(v.attributes).Size)
     );
 
     const sizesToAdd = standardSizes.filter((s) => !existingSizes.has(s));
@@ -450,7 +506,7 @@ const SellerProductDetails = () => {
 
     const newVariants = sizesToAdd.map((size) => ({
       _id: `var_quick_${size}_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
-      attributes: { Size: size, Color: defaultColor },
+      attributes: { Size: size, Color: defaultColor }, // OBJECT
       price: {
         amount: Number(product?.price?.amount || 0),
         currency: product?.price?.currency || "INR",
@@ -466,7 +522,6 @@ const SellerProductDetails = () => {
 
     showToast(`Generated ${sizesToAdd.length} size variants and stored locally`);
 
-    // Async sync in background
     for (const v of newVariants) {
       try {
         await handleAddVariant(productId, {
@@ -490,23 +545,6 @@ const SellerProductDetails = () => {
     }
   };
 
-  // Attributes builder helper
-  const handleAddAttributeRow = () => {
-    setAttributes((prev) => [...prev, { key: "", value: "" }]);
-  };
-
-  const handleRemoveAttributeRow = (idx) => {
-    setAttributes((prev) => prev.filter((_, i) => i !== idx));
-  };
-
-  const handleAttributeChange = (idx, field, val) => {
-    setAttributes((prev) => {
-      const copy = [...prev];
-      copy[idx] = { ...copy[idx], [field]: val };
-      return copy;
-    });
-  };
-
   // Copy Product ID
   const handleCopyId = () => {
     if (!product?._id) return;
@@ -527,18 +565,15 @@ const SellerProductDetails = () => {
           rel="stylesheet"
         />
         <div className="w-12 h-12 border-2 border-[#C9A96E] border-t-transparent rounded-full animate-spin mb-4" />
-        <p
-          className="text-xs uppercase tracking-[0.25em] text-[#7A6E63] font-medium animate-pulse"
-          style={{ fontFamily: "'Inter', sans-serif" }}
-        >
+        <p className="text-xs uppercase tracking-[0.25em] text-[#7A6E63] font-medium animate-pulse">
           Loading Product Studio...
         </p>
       </div>
     );
   }
 
-  // Error Screen
-  if (errorMsg && !product) {
+  // Error / Not Found Screen
+  if (!product) {
     return (
       <div
         className="min-h-screen flex flex-col items-center justify-center p-6 text-center"
@@ -551,13 +586,15 @@ const SellerProductDetails = () => {
           className="text-3xl font-light text-[#1b1c1a] mb-2"
           style={{ fontFamily: "'Cormorant Garamond', serif" }}
         >
-          Product Not Found
+          {errorMsg ? "Failed to Load Product Studio" : "Product Not Found"}
         </h2>
-        <p className="text-sm text-[#7A6E63] max-w-md mb-6">{errorMsg}</p>
-        <div className="flex gap-4">
+        <p className="text-sm text-[#7A6E63] max-w-lg mb-6 leading-relaxed">
+          {errorMsg || "The requested product record could not be found or loaded."}
+        </p>
+        <div className="flex flex-wrap justify-center gap-4">
           <button
             onClick={() => loadProduct(true)}
-            className="px-6 py-3 bg-[#1b1c1a] text-[#fbf9f6] text-[11px] uppercase tracking-[0.2em] font-medium hover:bg-[#C9A96E] hover:text-[#1b1c1a] transition-all"
+            className="px-6 py-3 bg-[#1b1c1a] text-[#fbf9f6] text-[11px] uppercase tracking-[0.2em] font-medium hover:bg-[#C9A96E] hover:text-[#1b1c1a] transition-all cursor-pointer"
           >
             Retry Fetch
           </button>
@@ -578,7 +615,6 @@ const SellerProductDetails = () => {
 
   return (
     <>
-      {/* Typography Imports */}
       <link
         href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;0,600;1,400&family=Inter:wght@300;400;500;600;700&display=swap"
         rel="stylesheet"
@@ -606,10 +642,9 @@ const SellerProductDetails = () => {
           </div>
         )}
 
-        {/* ── TOP LUXURY NAVIGATION BAR ── */}
+        {/* ── TOP NAVIGATION BAR ── */}
         <header className="sticky top-0 z-30 bg-[#fbf9f6]/95 backdrop-blur-md border-b border-[#ede9e3]">
           <div className="max-w-7xl mx-auto px-6 lg:px-12 h-20 flex items-center justify-between">
-            {/* Left: Breadcrumbs & Back */}
             <div className="flex items-center gap-4">
               <button
                 type="button"
@@ -643,7 +678,6 @@ const SellerProductDetails = () => {
               </div>
             </div>
 
-            {/* Right: Actions */}
             <div className="flex items-center gap-3">
               <button
                 type="button"
@@ -680,7 +714,6 @@ const SellerProductDetails = () => {
                 Reset State
               </button>
 
-              {/* View Customer Page */}
               <Link
                 to={`/products/${product._id}`}
                 target="_blank"
@@ -693,7 +726,6 @@ const SellerProductDetails = () => {
                 </svg>
               </Link>
 
-              {/* Add Variant CTA */}
               <button
                 type="button"
                 onClick={() => {
@@ -713,10 +745,26 @@ const SellerProductDetails = () => {
 
         {/* ── MAIN CONTENT AREA ── */}
         <main className="max-w-7xl mx-auto px-6 lg:px-12 pt-8">
+          {/* Error Banner when product is loaded but background sync or action encountered an error */}
+          {errorMsg && product && (
+            <div className="mb-6 p-4 bg-amber-50 border border-amber-200 text-xs text-amber-900 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <span>⚠</span>
+                <span>{errorMsg}</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => loadProduct(false)}
+                className="underline hover:no-underline font-medium uppercase tracking-wider text-[10px] cursor-pointer"
+              >
+                Retry Sync
+              </button>
+            </div>
+          )}
+
           {/* PRODUCT HERO SUMMARY CARD */}
           <section className="bg-white border border-[#ede9e3] p-6 lg:p-8 mb-8 shadow-sm">
             <div className="flex flex-col lg:flex-row gap-8 items-start">
-              {/* Product Gallery Mini Thumbnail Preview */}
               <div className="w-full lg:w-72 flex-shrink-0">
                 <div className="relative aspect-3/4 overflow-hidden bg-[#f5f3f0] border border-[#ede9e3] group">
                   <img
@@ -729,7 +777,6 @@ const SellerProductDetails = () => {
                   </div>
                 </div>
 
-                {/* Thumbnails row */}
                 {imagesList.length > 1 && (
                   <div className="flex gap-2 mt-3 overflow-x-auto pb-1 scrollbar-hide">
                     {imagesList.map((img, idx) => (
@@ -754,7 +801,6 @@ const SellerProductDetails = () => {
                 )}
               </div>
 
-              {/* Product Meta & Information */}
               <div className="flex-1 flex flex-col justify-between self-stretch">
                 <div>
                   <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
@@ -792,7 +838,6 @@ const SellerProductDetails = () => {
                   </p>
                 </div>
 
-                {/* Base Pricing & Date Footer */}
                 <div className="pt-6 border-t border-[#ede9e3] flex flex-wrap items-center justify-between gap-4">
                   <div className="flex items-center gap-6">
                     <div>
@@ -894,7 +939,6 @@ const SellerProductDetails = () => {
 
           {/* ── VARIANTS & STOCK MANAGER SECTION ── */}
           <section className="bg-white border border-[#ede9e3] shadow-sm">
-            {/* Header / Filter Toolbar */}
             <div className="p-6 border-b border-[#ede9e3] flex flex-col md:flex-row md:items-center justify-between gap-4">
               <div>
                 <h3
@@ -904,11 +948,10 @@ const SellerProductDetails = () => {
                   Product Variants & Stock Inventory
                 </h3>
                 <p className="text-xs text-[#7A6E63] mt-0.5">
-                  Manage individual SKU variations, customize pricing (optional), add up to 7 images (optional), and adjust live warehouse stock quantities. Stored locally.
+                  Attributes are stored as an object (e.g. <code>&#123; Size: "30", Color: "Blue" &#125;</code>). Price and images are optional.
                 </p>
               </div>
 
-              {/* Quick Actions */}
               <div className="flex flex-wrap items-center gap-3">
                 {product?.variants?.length === 0 && (
                   <button
@@ -1081,7 +1124,7 @@ const SellerProductDetails = () => {
                   <thead>
                     <tr className="border-b border-[#ede9e3] bg-[#fbf9f6] text-[10px] uppercase tracking-[0.22em] text-[#7A6E63] font-medium">
                       <th className="py-4 px-6">Images (Up to 7)</th>
-                      <th className="py-4 px-6">Attributes (Required)</th>
+                      <th className="py-4 px-6">Attributes Object (Required)</th>
                       <th className="py-4 px-6">Price</th>
                       <th className="py-4 px-6 text-center">Status</th>
                       <th className="py-4 px-6">Stock Level & Quick Adjust</th>
@@ -1094,13 +1137,14 @@ const SellerProductDetails = () => {
                       const isUpdating = updatingStockIds.has(variant._id);
                       const varImgs = Array.isArray(variant.images) ? variant.images : [];
                       const primaryImg = varImgs[0]?.url || product.images?.[0]?.url || "";
+                      const attrsObj = normalizeAttributes(variant.attributes);
 
                       return (
                         <tr
                           key={variant._id}
                           className="hover:bg-[#fcfbfa] transition-colors group"
                         >
-                          {/* Images column: Preview + count badge */}
+                          {/* Images column */}
                           <td className="py-4 px-6">
                             <div className="flex items-center gap-2">
                               <div
@@ -1145,24 +1189,19 @@ const SellerProductDetails = () => {
                             </div>
                           </td>
 
-                          {/* Attributes badges */}
+                          {/* Attributes badges: Displayed from plain Object */}
                           <td className="py-4 px-6">
                             <div className="flex flex-wrap gap-1.5 max-w-xs">
-                              {variant.attributes &&
-                              Object.keys(variant.attributes).length > 0 ? (
-                                Object.entries(variant.attributes).map(
-                                  ([k, v]) => (
-                                    <span
-                                      key={k}
-                                      className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-[#f5f3f0] border border-[#ede9e3] text-[10px] uppercase tracking-wider text-[#1b1c1a]"
-                                    >
-                                      <span className="text-[#7A6E63] font-normal">
-                                        {k}:
-                                      </span>
-                                      <span className="font-semibold">{v}</span>
-                                    </span>
-                                  )
-                                )
+                              {Object.keys(attrsObj).length > 0 ? (
+                                Object.entries(attrsObj).map(([k, v]) => (
+                                  <span
+                                    key={k}
+                                    className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-[#f5f3f0] border border-[#ede9e3] text-[10px] uppercase tracking-wider text-[#1b1c1a]"
+                                  >
+                                    <span className="text-[#7A6E63] font-normal">{k}:</span>
+                                    <span className="font-semibold">{v}</span>
+                                  </span>
+                                ))
                               ) : (
                                 <span className="text-xs text-[#B5ADA3] italic">
                                   Standard Base Variant
@@ -1174,7 +1213,7 @@ const SellerProductDetails = () => {
                             </span>
                           </td>
 
-                          {/* Price: Shows variant price or fallback to master */}
+                          {/* Price */}
                           <td className="py-4 px-6">
                             <div className="font-medium text-xs tracking-wider uppercase text-[#1b1c1a]">
                               {variant.price?.currency || product.price?.currency || "INR"}{" "}
@@ -1212,7 +1251,6 @@ const SellerProductDetails = () => {
                           {/* Interactive Stock Controls */}
                           <td className="py-4 px-6">
                             <div className="flex items-center gap-2">
-                              {/* Decrement */}
                               <button
                                 type="button"
                                 disabled={stockNum <= 0 || isUpdating}
@@ -1225,7 +1263,6 @@ const SellerProductDetails = () => {
                                 -
                               </button>
 
-                              {/* Number Input */}
                               <input
                                 type="number"
                                 min="0"
@@ -1236,7 +1273,6 @@ const SellerProductDetails = () => {
                                 className="w-16 py-1 text-center font-mono text-xs border border-[#ede9e3] bg-white focus:border-[#1b1c1a] focus:outline-none"
                               />
 
-                              {/* Increment */}
                               <button
                                 type="button"
                                 disabled={isUpdating}
@@ -1249,7 +1285,6 @@ const SellerProductDetails = () => {
                                 +
                               </button>
 
-                              {/* Quick Adjustment Shortcuts */}
                               <div className="hidden lg:flex items-center gap-1 ml-2">
                                 <button
                                   type="button"
@@ -1345,7 +1380,6 @@ const SellerProductDetails = () => {
         {isAddModalOpen && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-200">
             <div className="bg-[#fbf9f6] border border-[#ede9e3] max-w-2xl w-full p-8 shadow-2xl relative max-h-[92vh] overflow-y-auto">
-              {/* Close Button */}
               <button
                 type="button"
                 onClick={() => setIsAddModalOpen(false)}
@@ -1365,11 +1399,10 @@ const SellerProductDetails = () => {
                   Create Product Variant
                 </h3>
                 <p className="text-xs text-[#7A6E63] mt-1">
-                  At least <strong>one attribute is required</strong>. Image and price are <strong>optional</strong>. You can upload up to <strong>7 images</strong> per variant, stored locally.
+                  Attributes must be an <strong>Object</strong> (key-value pairs, at least 1 required). Images and price are optional.
                 </p>
               </div>
 
-              {/* Validation Error Banner */}
               {modalValidationErr && (
                 <div className="mb-6 p-3 bg-red-50 border border-red-200 text-xs text-red-700 flex items-center gap-2">
                   <span>⚠</span>
@@ -1378,50 +1411,50 @@ const SellerProductDetails = () => {
               )}
 
               <form onSubmit={handleCreateVariant} className="space-y-6">
-                {/* 1. REQUIRED ATTRIBUTES BUILDER */}
+                {/* 1. REQUIRED ATTRIBUTES BUILDER (OBJECT FORM) */}
                 <div className="bg-white border border-[#ede9e3] p-5">
                   <div className="flex items-center justify-between mb-3">
                     <label className="text-[10px] uppercase tracking-[0.2em] font-medium text-[#1b1c1a] flex items-center gap-1.5">
-                      <span>Variant Attributes</span>
-                      <span className="text-red-600 font-bold">* (At least 1 required)</span>
+                      <span>Variant Attributes Object</span>
+                      <span className="text-red-600 font-bold">* (At least 1 key-value required)</span>
                     </label>
                     <button
                       type="button"
-                      onClick={handleAddAttributeRow}
+                      onClick={handleAddNewAttributeKey}
                       className="text-[10px] uppercase tracking-wider text-[#C9A96E] hover:underline font-medium"
                     >
-                      + Add Attribute Row
+                      + Add Key Property
                     </button>
                   </div>
 
-                  {/* Attribute Rows */}
+                  {/* Attribute Key-Value Inputs */}
                   <div className="space-y-3">
-                    {attributes.map((attr, idx) => (
-                      <div key={idx} className="flex items-center gap-3">
+                    {Object.entries(attributes).map(([attrKey, attrVal]) => (
+                      <div key={attrKey} className="flex items-center gap-3">
                         <input
                           type="text"
-                          placeholder="e.g. Size, Color, Fit"
-                          value={attr.key}
+                          placeholder="Property (e.g. Size)"
+                          value={attrKey}
                           onChange={(e) =>
-                            handleAttributeChange(idx, "key", e.target.value)
+                            handleAttributeKeyRename(attrKey, e.target.value)
                           }
                           className="w-1/3 px-3 py-2 text-xs bg-[#fbf9f6] border border-[#ede9e3] focus:border-[#1b1c1a] focus:outline-none"
                         />
                         <input
                           type="text"
-                          placeholder="e.g. 30, Medium, Vintage Blue"
-                          value={attr.value}
+                          placeholder="Value (e.g. 30, Blue)"
+                          value={attrVal}
                           onChange={(e) =>
-                            handleAttributeChange(idx, "value", e.target.value)
+                            handleAttributeValueChange(attrKey, e.target.value)
                           }
                           className="flex-1 px-3 py-2 text-xs bg-[#fbf9f6] border border-[#ede9e3] focus:border-[#1b1c1a] focus:outline-none"
                         />
-                        {attributes.length > 1 && (
+                        {Object.keys(attributes).length > 1 && (
                           <button
                             type="button"
-                            onClick={() => handleRemoveAttributeRow(idx)}
+                            onClick={() => handleRemoveAttribute(attrKey)}
                             className="text-[#B5ADA3] hover:text-red-700 px-1 text-lg"
-                            title="Remove row"
+                            title="Remove property"
                           >
                             ×
                           </button>
@@ -1441,17 +1474,10 @@ const SellerProductDetails = () => {
                           key={sz}
                           type="button"
                           onClick={() => {
-                            const sizeIdx = attributes.findIndex(
-                              (a) => a.key.toLowerCase() === "size"
-                            );
-                            if (sizeIdx !== -1) {
-                              handleAttributeChange(sizeIdx, "value", sz);
-                            } else {
-                              setAttributes((prev) => [
-                                ...prev,
-                                { key: "Size", value: sz },
-                              ]);
-                            }
+                            setAttributes((prev) => ({
+                              ...prev,
+                              Size: sz,
+                            }));
                           }}
                           className="px-2 py-1 text-[10px] uppercase tracking-wider border border-[#ede9e3] bg-[#fbf9f6] hover:border-[#1b1c1a] hover:bg-white text-[#1b1c1a] transition-all"
                         >
@@ -1472,17 +1498,10 @@ const SellerProductDetails = () => {
                           key={col.name}
                           type="button"
                           onClick={() => {
-                            const colIdx = attributes.findIndex(
-                              (a) => a.key.toLowerCase() === "color"
-                            );
-                            if (colIdx !== -1) {
-                              handleAttributeChange(colIdx, "value", col.name);
-                            } else {
-                              setAttributes((prev) => [
-                                ...prev,
-                                { key: "Color", value: col.name },
-                              ]);
-                            }
+                            setAttributes((prev) => ({
+                              ...prev,
+                              Color: col.name,
+                            }));
                           }}
                           className="inline-flex items-center gap-1.5 px-2 py-1 text-[10px] uppercase tracking-wider border border-[#ede9e3] bg-[#fbf9f6] hover:border-[#1b1c1a] text-[#1b1c1a] transition-all"
                         >
@@ -1554,7 +1573,6 @@ const SellerProductDetails = () => {
                     Upload new photos from your device or select from product's existing images (up to 7 photos):
                   </p>
 
-                  {/* Hidden File Input */}
                   <input
                     ref={fileInputRef}
                     type="file"
@@ -1569,7 +1587,6 @@ const SellerProductDetails = () => {
                     }}
                   />
 
-                  {/* Drag and Drop Zone */}
                   {variantImages.length < MAX_VARIANT_IMAGES && (
                     <div
                       onDragOver={(e) => {
@@ -1603,7 +1620,6 @@ const SellerProductDetails = () => {
                     </div>
                   )}
 
-                  {/* Currently Staged Images Thumbnails */}
                   {variantImages.length > 0 && (
                     <div className="mb-4">
                       <span className="block text-[9px] uppercase tracking-wider text-[#7A6E63] mb-2 font-medium">
@@ -1637,7 +1653,6 @@ const SellerProductDetails = () => {
                     </div>
                   )}
 
-                  {/* Pick from Master Product Images */}
                   {imagesList.length > 0 && (
                     <div>
                       <span className="block text-[9px] uppercase tracking-wider text-[#7A6E63] mb-2 font-medium">
@@ -1679,7 +1694,7 @@ const SellerProductDetails = () => {
                 {/* Submit Actions */}
                 <div className="flex items-center justify-between pt-4 border-t border-[#ede9e3]">
                   <span className="text-[10px] text-[#7A6E63] italic">
-                    All variants will be saved to your browser local state.
+                    Attributes will be stored as an Object: &#123; [key]: value &#125;.
                   </span>
                   <div className="flex items-center gap-3">
                     <button

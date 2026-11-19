@@ -504,9 +504,8 @@ const Dashboard = () => {
 
                 return (
                   <article
-                  onClick={()=> {navigate(`/seller/product/${product._id}`)}}
                     key={product._id || product.title}
-                    onClick={() => openQuickView(product)}
+                    onClick={() => navigate(`/seller/product/${product._id}`)}
                     className="group bg-white border border-[#ede9e3] hover:border-[#d0c5b5] transition-all duration-300 flex flex-col overflow-hidden hover:shadow-lg cursor-pointer"
                   >
                     {/* Image Container */}
@@ -708,16 +707,28 @@ const Dashboard = () => {
                         </td>
 
                         <td className="py-4 px-6 text-right">
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              openQuickView(product);
-                            }}
-                            className="px-3 py-1.5 border border-[#ede9e3] hover:border-[#C9A96E] hover:text-[#C9A96E] text-[10px] uppercase tracking-wider transition-colors"
-                          >
-                            Inspect
-                          </button>
+                          <div className="flex items-center justify-end gap-2">
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                navigate(`/seller/product/${product._id}`);
+                              }}
+                              className="px-3 py-1.5 bg-[#1b1c1a] text-white hover:bg-[#C9A96E] hover:text-[#1b1c1a] text-[10px] uppercase tracking-wider transition-colors font-medium"
+                            >
+                              Variants & Stock
+                            </button>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                openQuickView(product);
+                              }}
+                              className="px-3 py-1.5 border border-[#ede9e3] hover:border-[#C9A96E] hover:text-[#C9A96E] text-[10px] uppercase tracking-wider transition-colors"
+                            >
+                              Inspect
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     );
@@ -884,20 +895,24 @@ const Dashboard = () => {
                   </div>
 
                   {/* Modal CTA footer */}
-                  <div className="mt-8 pt-6 border-t border-[#ede9e3] flex items-center gap-3">
+                  <div className="mt-8 pt-6 border-t border-[#ede9e3] flex flex-col sm:flex-row items-center gap-3">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        closeQuickView();
+                        navigate(`/seller/product/${selectedProduct._id}`);
+                      }}
+                      className="w-full sm:flex-1 py-3 text-xs uppercase tracking-[0.2em] font-medium bg-[#1b1c1a] text-white hover:bg-[#C9A96E] hover:text-[#1b1c1a] transition-all text-center"
+                    >
+                      Manage Variants & Stock
+                    </button>
                     <button
                       type="button"
                       onClick={closeQuickView}
-                      className="flex-1 py-3 text-xs uppercase tracking-[0.2em] font-medium border border-[#1b1c1a] hover:bg-[#1b1c1a] hover:text-white transition-colors text-center"
+                      className="w-full sm:w-28 py-3 text-xs uppercase tracking-[0.2em] font-medium border border-[#ede9e3] hover:border-[#1b1c1a] transition-colors text-center"
                     >
-                      Done
+                      Close
                     </button>
-                    <Link
-                      to="/seller/create-product"
-                      className="flex-1 py-3 text-xs uppercase tracking-[0.2em] font-medium bg-[#1b1c1a] text-white hover:brightness-125 transition-all text-center"
-                    >
-                      Add Another
-                    </Link>
                   </div>
                 </div>
               </div>

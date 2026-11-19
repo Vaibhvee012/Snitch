@@ -1,17 +1,19 @@
+
 import { createBrowserRouter, Navigate } from "react-router-dom";
+
 import Register from "../features/auth/pages/Register.jsx";
 import Login from "../features/auth/pages/Login.jsx";
 import CreateProduct from "../features/products/pages/CreateProduct.jsx";
 import Dashboard from "../features/products/pages/Dashboard.jsx";
 import Proctected from "../features/auth/components/Proctected.jsx";
-import Home from "../features/products/pages/Home.jsx"
+import Home from "../features/products/pages/Home.jsx";
 import ProductDetails from "../features/products/pages/ProductDetail.jsx";
 import SellerProductDetails from "../features/products/pages/SellerProductDetail.jsx";
 
 export const routes = createBrowserRouter([
   {
     path: "/",
-    element: <Home/>,
+    element: <Home />,
   },
   {
     path: "/home",

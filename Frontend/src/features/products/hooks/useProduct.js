@@ -1,4 +1,3 @@
-
 import React, { useCallback } from "react";
 import {
   createProduct,
@@ -6,15 +5,9 @@ import {
   getAllProducts,
   getProductById,
   addProductVariant,
-  updateVariantStock,
-  deleteProductVariant,
 } from "../service/product.api";
-
 import { useDispatch } from "react-redux";
-import {
-  setSellerProducts,
-  setProducts,
-} from "../state/product.slice";
+import { setSellerProducts, setProducts } from "../state/product.slice";
 
 export const useProduct = () => {
   const dispatch = useDispatch();
@@ -26,36 +19,15 @@ export const useProduct = () => {
 
   const handleGetSellerProduct = useCallback(async () => {
     const data = await getSellerProduct();
-
-    const products =
-      data.products ||
-      (data.product
-        ? [data.product]
-        : Array.isArray(data)
-          ? data
-          : []);
-
+    const products = data.products || data.product || (Array.isArray(data) ? data : []);
     dispatch(setSellerProducts(products));
-
     return products;
   }, [dispatch]);
 
   const handleGetAllProducts = useCallback(async () => {
     const data = await getAllProducts();
-
-    const products =
-      data.products ||
-      (Array.isArray(data)
-        ? data
-        : data.data ||
-          (data.product
-            ? [data.product]
-            : data._id
-              ? [data]
-              : []));
-
+    const products = data.products || (Array.isArray(data) ? data : []);
     dispatch(setProducts(products));
-
     return products;
   }, [dispatch]);
 
@@ -64,18 +36,8 @@ export const useProduct = () => {
     return data?.product || data;
   }, []);
 
-  const handleAddVariant = useCallback(async (productId, variantData) => {
-    const data = await addProductVariant(productId, variantData);
-    return data;
-  }, []);
-
-  const handleUpdateVariantStock = useCallback(async (productId, variantId, stock) => {
-    const data = await updateVariantStock(productId, variantId, stock);
-    return data;
-  }, []);
-
-  const handleDeleteVariant = useCallback(async (productId, variantId) => {
-    const data = await deleteProductVariant(productId, variantId);
+  const handleAddProductVariant = useCallback(async (productId, newProductVariant) => {
+    const data = await addProductVariant(productId, newProductVariant);
     return data;
   }, []);
 
@@ -84,8 +46,7 @@ export const useProduct = () => {
     handleGetSellerProduct,
     handleGetAllProducts,
     handleGetProductById,
-    handleAddVariant,
-    handleUpdateVariantStock,
-    handleDeleteVariant,
+    handleAddProductVariant,
+    handleAddVariant: handleAddProductVariant,
   };
 };
