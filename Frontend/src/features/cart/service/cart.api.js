@@ -19,22 +19,13 @@ export const getCart = async () => {
 };
 
 export const updateCartItemQuantity = async ({ itemId, quantity }) => {
-    try {
-        const response = await cartApiInstance.put(`/${itemId}`, { quantity });
-        return response.data;
-    } catch {
-        // Fallback or silently resolve for local state
-        return { success: true };
-    }
+    const response = await cartApiInstance.put(`/${itemId}`, { quantity });
+    return response.data;
 };
 
 export const removeCartItem = async (itemId) => {
-    try {
-        const response = await cartApiInstance.delete(`/${itemId}`);
-        return response.data;
-    } catch {
-        return { success: true };
-    }
+    const response = await cartApiInstance.delete(`/${itemId}`);
+    return response.data;
 };
 
 export const createCartOrder = async () => {
@@ -57,3 +48,8 @@ export const verifyCartOrder = async (payload) => {
         return response.data;
     }
 };
+
+export const incrementCartItem = async ({ productId, variantId }) => {
+    const response = await cartApiInstance.post(`/increment/${productId}/${variantId}`);
+    return response.data
+}

@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useMemo } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { useSelector } from "react-redux";
 import { Link, useNavigate } from "react-router-dom";
 import { useRazorpay } from "react-razorpay";
@@ -39,19 +39,30 @@ const Cart = () => {
     const navigate = useNavigate();
     const { Razorpay } = useRazorpay();
 
-    const [isLoading, setIsLoading] = useState(false);
+    const [isLoading, setIsLoading] = useState(true);
     const [isCheckingOut, setIsCheckingOut] = useState(false);
     const [promoCode, setPromoCode] = useState("");
     const [appliedPromo, setAppliedPromo] = useState(null);
     const [promoError, setPromoError] = useState("");
     const [itemActionNotice, setItemActionNotice] = useState("");
+    const [cartError, setCartError] = useState("");
+    const [pendingItemIds, setPendingItemIds] = useState([]);
 
     useEffect(() => {
         let isMounted = true;
-        setIsLoading(true);
-        handleGetCart().finally(() => {
-            if (isMounted) setIsLoading(false);
-        });
+        handleGetCart()
+            .catch((error) => {
+                if (isMounted) {
+                    setCartError(
+                        error.response?.data?.message ||
+                        error.message ||
+                        "Could not load your cart. Please try again."
+                    );
+                }
+            })
+            .finally(() => {
+                if (isMounted) setIsLoading(false);
+            });
         return () => {
             isMounted = false;
         };
@@ -65,15 +76,27 @@ const Cart = () => {
     // Calculate subtotal and shipping
     const items = cart?.items || [];
 
+    const getItemVariant = (item) => {
+        if (item?.variant && typeof item.variant === "object") {
+            return item.variant;
+        }
+
+        const variantId = item?.variant;
+        return item?.product?.variants?.find(
+            (variant) => variant._id?.toString() === variantId?.toString()
+        );
+    };
+
     const getItemUnitPrice = (item) => {
+        const variant = getItemVariant(item);
+        if (variant?.price?.amount != null) {
+            return Number(variant.price.amount);
+        }
         if (item?.price?.amount != null) {
             return Number(item.price.amount);
         }
         if (typeof item?.price === "number") {
             return item.price;
-        }
-        if (item?.variant && typeof item.variant === "object" && item.variant.price?.amount != null) {
-            return Number(item.variant.price.amount);
         }
         if (item?.product?.price?.amount != null) {
             return Number(item.product.price.amount);
@@ -82,16 +105,19 @@ const Cart = () => {
     };
 
     const getItemCurrency = (item) => {
-        return item?.price?.currency || item?.variant?.price?.currency || item?.product?.price?.currency || "INR";
+        return getItemVariant(item)?.price?.currency || item?.price?.currency || item?.product?.price?.currency || "INR";
     };
 
-    const subtotal = useMemo(() => {
-        return items.reduce((total, item) => {
-            const price = getItemUnitPrice(item);
-            const qty = Number(item?.quantity) || 1;
-            return total + price * qty;
-        }, 0);
-    }, [items]);
+    const totalQuantity = items.reduce(
+        (total, item) => total + (Number(item?.quantity) || 1),
+        0
+    );
+
+    const subtotal = items.reduce((total, item) => {
+        const price = getItemUnitPrice(item);
+        const qty = Number(item?.quantity) || 1;
+        return total + price * qty;
+    }, 0);
 
     const freeShippingThreshold = 2000;
     const isFreeShipping = subtotal >= freeShippingThreshold || subtotal === 0;
@@ -177,9 +203,42 @@ const Cart = () => {
     };
 
     const handleRemoveWithNotice = (itemId, title) => {
-        handleRemoveCartItem(itemId);
-        setItemActionNotice(`Removed "${title || 'Piece'}" from your selection.`);
-        setTimeout(() => setItemActionNotice(""), 3500);
+        runItemAction(itemId, async () => {
+            await handleRemoveCartItem(itemId);
+            setItemActionNotice(`Removed "${title || "Piece"}" from your selection.`);
+            setTimeout(() => setItemActionNotice(""), 3500);
+        });
+    };
+
+    const runItemAction = async (itemId, action) => {
+        if (pendingItemIds.includes(itemId)) return;
+        setPendingItemIds((current) => [...current, itemId]);
+        setCartError("");
+        try {
+            await action();
+        } catch (error) {
+            setCartError(
+                error.response?.data?.message ||
+                error.message ||
+                "Could not update your cart. Please try again."
+            );
+        } finally {
+            setPendingItemIds((current) => current.filter((id) => id !== itemId));
+        }
+    };
+
+    const handleRetryCart = () => {
+        setIsLoading(true);
+        setCartError("");
+        handleGetCart()
+            .catch((error) => {
+                setCartError(
+                    error.response?.data?.message ||
+                    error.message ||
+                    "Could not load your cart. Please try again."
+                );
+            })
+            .finally(() => setIsLoading(false));
     };
 
     // Editorial Fallback Placeholder for items without images
@@ -226,6 +285,43 @@ const Cart = () => {
             </div>
         );
     };
+
+    if (isLoading && !items.length) {
+        return (
+            <div
+                className="min-h-screen flex items-center justify-center"
+                style={{ backgroundColor: tokens.surface, color: tokens.secondary }}
+                role="status"
+            >
+                <p className="text-[11px] uppercase tracking-[0.25em] animate-pulse">
+                    Retrieving your selection...
+                </p>
+            </div>
+        );
+    }
+
+    if (cartError && !items.length) {
+        return (
+            <div
+                className="min-h-screen flex flex-col items-center justify-center gap-5 px-6 text-center"
+                style={{ backgroundColor: tokens.surface, color: tokens.onSurface }}
+                role="alert"
+            >
+                <p className="text-sm">{cartError}</p>
+                <button
+                    type="button"
+                    onClick={handleRetryCart}
+                    className="px-8 py-3 text-[10px] uppercase tracking-[0.2em]"
+                    style={{ backgroundColor: tokens.onSurface, color: tokens.surface }}
+                >
+                    Retry
+                </button>
+                <Link to="/" className="text-[10px] uppercase tracking-[0.2em]" style={{ color: tokens.secondary }}>
+                    Continue Shopping
+                </Link>
+            </div>
+        );
+    }
 
     // Empty Cart Presentation
     if (!items.length && !isLoading) {
@@ -414,6 +510,19 @@ const Cart = () => {
                         {itemActionNotice}
                     </div>
                 )}
+                {cartError && (
+                    <div
+                        role="alert"
+                        className="mx-6 mt-5 border px-4 py-3 text-xs sm:mx-12 lg:mx-16"
+                        style={{
+                            backgroundColor: "#fff7f5",
+                            borderColor: "#e7b6ac",
+                            color: "#8a2c1f",
+                        }}
+                    >
+                        {cartError}
+                    </div>
+                )}
 
                 {/* Main Content */}
                 <main className="max-w-7xl mx-auto px-6 md:px-12 lg:px-16 py-10 lg:py-16">
@@ -474,7 +583,7 @@ const Cart = () => {
                                         className="text-[10px] uppercase tracking-[0.25em] font-medium"
                                         style={{ color: tokens.secondary }}
                                     >
-                                        {items.length} {items.length === 1 ? "Curated Piece" : "Curated Pieces"}
+                                        {totalQuantity} {totalQuantity === 1 ? "Curated Piece" : "Curated Pieces"}
                                     </p>
                                 </div>
 
@@ -499,14 +608,22 @@ const Cart = () => {
 
                                     // Extract variant details if available
                                     const variantId = typeof variant === "string" ? variant : variant?._id;
-                                    const variantObj =
-                                        typeof variant === "object"
-                                            ? variant
-                                            : product?.variants?.find((v) => v._id?.toString() === variantId?.toString());
+                                    const variantObj = getItemVariant(item);
 
                                     // Attributes dictionary
-                                    const attributes = variantObj?.attributes || {};
+                                    const variantAttributes = variantObj?.attributes || {};
+                                    const attributes =
+                                        variantAttributes instanceof Map
+                                            ? Object.fromEntries(variantAttributes)
+                                            : typeof variantAttributes.toObject === "function"
+                                                ? variantAttributes.toObject()
+                                                : variantAttributes;
                                     const hasAttributes = Object.keys(attributes).length > 0;
+                                    const stockStatus = variantObj?.stock === undefined || variantObj?.stock === null
+                                        ? null
+                                        : Number(variantObj.stock) > 0
+                                            ? "In Stock"
+                                            : "Out of Stock";
 
                                     // Product / variant image
                                     const imageUrl =
@@ -571,7 +688,7 @@ const Cart = () => {
                                                                         color: tokens.onSurface,
                                                                     }}
                                                                 >
-                                                                    {product.title || "Luxury Garment"}
+                                                                    {product.title || "Product unavailable"}
                                                                 </h2>
 
                                                                 <p
@@ -590,14 +707,12 @@ const Cart = () => {
                                                                 >
                                                                     {formatCurrency(lineTotal, currency)}
                                                                 </p>
-                                                                {qty > 1 && (
-                                                                    <p
-                                                                        className="text-[10px] tracking-wider"
-                                                                        style={{ color: tokens.muted }}
-                                                                    >
-                                                                        {formatCurrency(unitPrice, currency)} each
-                                                                    </p>
-                                                                )}
+                                                                <p
+                                                                    className="text-[10px] tracking-wider"
+                                                                    style={{ color: tokens.muted }}
+                                                                >
+                                                                    {formatCurrency(unitPrice, currency)} each
+                                                                </p>
                                                             </div>
                                                         </div>
 
@@ -631,12 +746,17 @@ const Cart = () => {
                                                                 </span>
                                                             ) : null}
 
-                                                            <span
-                                                                className="text-[9px] uppercase tracking-[0.18em] px-2 py-0.5"
-                                                                style={{ color: tokens.success, backgroundColor: tokens.successBg }}
-                                                            >
-                                                                In Stock
-                                                            </span>
+                                                            {stockStatus && (
+                                                                <span
+                                                                    className="text-[9px] uppercase tracking-[0.18em] px-2 py-0.5"
+                                                                    style={{
+                                                                        color: stockStatus === "In Stock" ? tokens.success : "#8a2c1f",
+                                                                        backgroundColor: stockStatus === "In Stock" ? tokens.successBg : "#fff0ed",
+                                                                    }}
+                                                                >
+                                                                    {stockStatus}
+                                                                </span>
+                                                            )}
                                                         </div>
                                                     </div>
 
@@ -652,13 +772,13 @@ const Cart = () => {
                                                                 style={{ borderColor: tokens.outlineVariant }}
                                                             >
                                                                 <button
-                                                                    onClick={() =>
+                                                                    onClick={() => runItemAction(item._id, () =>
                                                                         handleDecrementCartItem({
                                                                             itemId: item._id,
                                                                             currentQty: qty,
                                                                         })
-                                                                    }
-                                                                    disabled={qty <= 1}
+                                                                    )}
+                                                                    disabled={qty <= 1 || pendingItemIds.includes(item._id)}
                                                                     className="w-8 h-8 flex items-center justify-center text-sm font-light transition-colors hover:bg-neutral-100 disabled:opacity-30 disabled:cursor-not-allowed"
                                                                     style={{
                                                                         color: tokens.onSurface,
@@ -677,14 +797,15 @@ const Cart = () => {
                                                                 </span>
 
                                                                 <button
-                                                                    onClick={() =>
+                                                                    onClick={() => runItemAction(item._id, () =>
                                                                         handleIncrementCartItem({
                                                                             itemId: item._id,
                                                                             productId: product?._id,
                                                                             variantId,
                                                                             currentQty: qty,
                                                                         })
-                                                                    }
+                                                                    )}
+                                                                    disabled={pendingItemIds.includes(item._id)}
                                                                     className="w-8 h-8 flex items-center justify-center text-sm font-light transition-colors hover:bg-neutral-100"
                                                                     style={{
                                                                         color: tokens.onSurface,
@@ -701,12 +822,13 @@ const Cart = () => {
                                                         <div className="flex items-center gap-5 text-[10px] uppercase tracking-[0.22em] font-medium">
                                                             <button
                                                                 onClick={() => handleRemoveWithNotice(item._id, product.title)}
+                                                                disabled={pendingItemIds.includes(item._id)}
                                                                 className="transition-colors hover:text-black underline underline-offset-4"
                                                                 style={{ color: tokens.secondary }}
                                                             >
                                                                 Remove
                                                             </button>
-                                                        </div>
+            </div>
                                                     </div>
                                                 </div>
                                             </div>
@@ -776,7 +898,7 @@ const Cart = () => {
                                 <div className="flex flex-col gap-3.5 mb-6 text-xs">
                                     <div className="flex justify-between items-baseline">
                                         <span className="text-[10px] uppercase tracking-[0.18em]" style={{ color: tokens.secondary }}>
-                                            Subtotal ({items.length} {items.length === 1 ? "piece" : "pieces"})
+                                            Subtotal ({totalQuantity} {totalQuantity === 1 ? "piece" : "pieces"})
                                         </span>
                                         <span className="font-medium tracking-wide" style={{ color: tokens.onSurface }}>
                                             {formatCurrency(subtotal)}
