@@ -12,16 +12,6 @@ import Cart from "../features/cart/pages/Cart.jsx";
 import Proctected from "../features/auth/components/Proctected.jsx";
 import Applayout from "./Applayout.jsx";
 
-import CreateProduct from "../features/products/pages/CreateProduct.jsx";
-import Dashboard from "../features/products/pages/Dashboard.jsx";
-import Home from "../features/products/pages/Home.jsx";
-import ProductDetails from "../features/products/pages/ProductDetail.jsx";
-import SellerProductDetails from "../features/products/pages/SellerProductDetail.jsx";
-import Cart from "../features/cart/pages/Cart.jsx";
-
-import Proctected from "../features/auth/components/Proctected.jsx";
-import Applayout from "./Applayout.jsx";
-
 export const routes = createBrowserRouter([
   {
     element: <Applayout />,

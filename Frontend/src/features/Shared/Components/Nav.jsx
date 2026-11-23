@@ -53,9 +53,9 @@ const Nav = () => {
         );
     }, [totalQuantity, cartItems]);
 
-    // Only buyers (and non-sellers) can see the cart icon
+    // Only show cart icon when user is logged in AND is not a seller (i.e. buyer only)
     const isSeller = user?.role === "seller";
-    const showCartIcon = !isSeller;
+    const showCartIcon = Boolean(user && !isSeller);
 
     return (
         <header
