@@ -1,71 +1,55 @@
-﻿import express from "express";
+﻿
+import express from "express";
 import multer from "multer";
 
 import { authenticateSeller } from "../middlewares/auth.middleware.js";
 import { createProductValidator } from "../validator/product.validator.js";
 
 import {
-  createProduct,
-  getSellerProducts,
-  getAllProducts,
-  getProductById,
-  addProductVariant,
-
+    createProduct,
+    getSellerProducts,
+    getAllProducts,
+    getProductById,
+    addProductVariant,
 } from "../controllers/product.controller.js";
 
 const router = express.Router();
 
 const upload = multer({
-  storage: multer.memoryStorage(),
-  limits: {
-    fileSize: 5 * 1024 * 1024, // 5 MB
-  },
+    storage: multer.memoryStorage(),
+    limits: {
+        fileSize: 5 * 1024 * 1024, // 5 MB
+    },
 });
 
-/**
- * @route POST /api/products
- * @desc Create a new product
- * @access Private (Seller only)
- */
+// Create a product
 router.post(
-  "/",
-  authenticateSeller,
-  upload.array("images", 7),
-  createProductValidator,
-  createProduct
+    "/",
+    authenticateSeller,
+    upload.array("images", 7),
+    createProductValidator,
+    createProduct
 );
 
-/**
- * @route GET /api/products/seller
- * @desc Get all products for the logged-in seller
- * @access Private (Seller only)
- */
+// Get seller products
 router.get(
-  "/seller",
-  authenticateSeller,
-  getSellerProducts
+    "/seller",
+    authenticateSeller,
+    getSellerProducts
 );
 
-/**
- * @route GET /api/products
- * @desc Get all products
- * @access Public
- */
+// Get all products for buyers
 router.get("/", getAllProducts);
 
-/**
- * @route GET /api/products/details/:id
- * @desc Get product details by ID
- * @access Public
- */
+// Get product details
 router.get("/details/:id", getProductById);
 
-/**
- * @route POST /api/products/:ProductId/variants
- * @desc Add a new variant to a product
- * @access Private (Seller only)
- */
-router.post("/:ProductId/variants", authenticateSeller, upload.array('images',7),addProductVariant);
-
+// Add a product variant
+router.post(
+    "/:productId/variants",
+    authenticateSeller,
+    upload.array("images", 7),
+    addProductVariant
+);
 
 export default router;

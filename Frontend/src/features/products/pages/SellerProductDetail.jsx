@@ -3,8 +3,23 @@ import { useParams, useNavigate, Link } from "react-router-dom";
 import { useProduct } from "../hooks/useProduct";
 
 const MAX_VARIANT_IMAGES = 7;
-const POPULAR_SIZES = ["XS", "S", "M", "L", "XL", "XXL", "28", "30", "32", "34", "36"];
+const POPULAR_SIZES = [
+  "Free Size",
+  "XS",
+  "S",
+  "M",
+  "L",
+  "XL",
+  "XXL",
+  "28",
+  "30",
+  "32",
+  "34",
+  "36",
+];
+
 const POPULAR_COLORS = [
+  { name: "Default", hex: "#D6C8B5" },
   { name: "Vintage Blue", hex: "#4A6B82" },
   { name: "Deep Indigo", hex: "#1D2D44" },
   { name: "Washed Black", hex: "#2C2C2C" },
