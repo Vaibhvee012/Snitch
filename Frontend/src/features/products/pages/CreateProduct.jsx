@@ -15,14 +15,7 @@ const CreateProduct = () => {
         description: "",
         priceAmount: "",
         priceCurrency: "INR",
-    });
-
-    const [variant, setVariant] = useState({
-        color: "Default",
-        size: "Free Size",
-        priceAmount: "",
-        priceCurrency: "INR",
-        stock: "",
+        color: "",
     });
 
     const [images, setImages] = useState([]);
@@ -35,11 +28,6 @@ const CreateProduct = () => {
     const handleChange = (e) => {
         const { name, value } = e.target;
         setFormData((prev) => ({ ...prev, [name]: value }));
-    };
-
-    const handleVariantChange = (e) => {
-        const { name, value } = e.target;
-        setVariant((prev) => ({ ...prev, [name]: value }));
     };
 
     const addFiles = (files) => {
@@ -87,19 +75,6 @@ const CreateProduct = () => {
             return;
         }
 
-        if (
-            !variant.priceAmount ||
-            Number(variant.priceAmount) <= 0
-        ) {
-            setErrorMessage("Please enter a valid variant price.");
-            return;
-        }
-
-        if (variant.stock === "" || Number(variant.stock) < 0) {
-            setErrorMessage("Please enter valid variant stock.");
-            return;
-        }
-
         setIsSubmitting(true);
 
         try {
@@ -110,21 +85,18 @@ const CreateProduct = () => {
             payload.append("priceAmount", formData.priceAmount);
             payload.append("priceCurrency", formData.priceCurrency);
 
-            const variants = [
+            payload.append("variants", JSON.stringify([
                 {
                     attributes: {
-                        color: variant.color,
-                        size: variant.size,
+                        Color: formData.color.trim() || "Default",
                     },
                     price: {
-                        amount: Number(variant.priceAmount),
-                        currency: variant.priceCurrency,
+                        amount: Number(formData.priceAmount),
+                        currency: formData.priceCurrency,
                     },
-                    stock: Number(variant.stock),
+                    stock: 0,
                 },
-            ];
-
-            payload.append("variants", JSON.stringify(variants));
+            ]));
 
             images.forEach(({ file }) => {
                 payload.append("images", file);
@@ -222,7 +194,7 @@ const CreateProduct = () => {
                         </h1>
 
                         <p className="mt-3 text-sm" style={{ color: "#7A6E63" }}>
-                            Fill in the product and variant details.
+                            Fill in the product details and optional color.
                         </p>
                     </header>
 
@@ -312,113 +284,26 @@ const CreateProduct = () => {
                                     />
                                 </div>
                             </div>
-                        </section>
-
-                        {/* Variant Details */}
-                        <section className="flex flex-col gap-6">
-                            <div>
-                                <h2
-                                    className="text-xs uppercase tracking-[0.2em] font-medium"
-                                    style={{ color: "#C9A96E" }}
-                                >
-                                    Variant Details
-                                </h2>
-
-                                <p className="text-xs mt-2" style={{ color: "#7A6E63" }}>
-                                    Default color and free-size options are preselected.
-                                </p>
-                            </div>
-
-                            <div className="grid grid-cols-2 gap-5">
-                                <div className="flex flex-col gap-2">
-                                    <label className="text-[10px] uppercase tracking-[0.18em]">
-                                        Color
-                                    </label>
-
-                                    <select
-                                        name="color"
-                                        value={variant.color}
-                                        onChange={handleVariantChange}
-                                        className={inputBase}
-                                        style={underlineStyle}
-                                    >
-                                        <option value="Default">Default</option>
-                                    </select>
-                                </div>
-
-                                <div className="flex flex-col gap-2">
-                                    <label className="text-[10px] uppercase tracking-[0.18em]">
-                                        Size
-                                    </label>
-
-                                    <select
-                                        name="size"
-                                        value={variant.size}
-                                        onChange={handleVariantChange}
-                                        className={inputBase}
-                                        style={underlineStyle}
-                                    >
-                                        <option value="Free Size">Free Size</option>
-                                    </select>
-                                </div>
-                            </div>
 
                             <div className="flex flex-col gap-2">
                                 <label className="text-[10px] uppercase tracking-[0.18em]">
-                                    Variant Price *
-                                </label>
-
-                                <div className="flex items-end gap-5">
-                                    <select
-                                        name="priceCurrency"
-                                        value={variant.priceCurrency}
-                                        onChange={handleVariantChange}
-                                        className={inputBase}
-                                        style={underlineStyle}
-                                    >
-                                        {CURRENCIES.map((currency) => (
-                                            <option key={currency} value={currency}>
-                                                {currency}
-                                            </option>
-                                        ))}
-                                    </select>
-
-                                    <input
-                                        type="number"
-                                        name="priceAmount"
-                                        value={variant.priceAmount}
-                                        onChange={handleVariantChange}
-                                        min="0.01"
-                                        step="0.01"
-                                        required
-                                        placeholder="Variant price"
-                                        className={inputBase}
-                                        style={underlineStyle}
-                                        onFocus={onFocus}
-                                        onBlur={onBlur}
-                                    />
-                                </div>
-                            </div>
-
-                            <div className="flex flex-col gap-2">
-                                <label className="text-[10px] uppercase tracking-[0.18em]">
-                                    Available Stock *
+                                    Color
                                 </label>
 
                                 <input
-                                    type="number"
-                                    name="stock"
-                                    value={variant.stock}
-                                    onChange={handleVariantChange}
-                                    min="0"
-                                    step="1"
-                                    required
-                                    placeholder="Enter quantity"
+                                    type="text"
+                                    name="color"
+                                    value={formData.color}
+                                    onChange={handleChange}
+                                    placeholder="Enter a color (optional)"
                                     className={inputBase}
                                     style={underlineStyle}
                                     onFocus={onFocus}
                                     onBlur={onBlur}
                                 />
+                                <p className="text-xs" style={{ color: "#7A6E63" }}>
+                                    This color is used for the product variant. If left blank, it defaults to “Default”.
+                                </p>
                             </div>
                         </section>
 
