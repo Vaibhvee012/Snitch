@@ -1,8 +1,9 @@
 
-import React, { useEffect, useState, useMemo } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useProduct } from "../hooks/useProduct";
 import { useCart } from "../../cart/hooks/useCart";
+import WishlistHeart from "../../wishlist/components/WishlistHeart";
 
 const ProductDetail = () => {
     const { productId } = useParams();
@@ -348,6 +349,12 @@ const ProductDetail = () => {
                                 className="relative w-full aspect-[4/5] overflow-hidden group"
                                 style={{ backgroundColor: "#f5f3f0" }}
                             >
+                                <div className="absolute top-4 right-4 z-20 opacity-0 transition-opacity duration-200 group-hover:opacity-100 group-focus-within:opacity-100">
+                                    <WishlistHeart
+                                        product={product}
+                                        size="lg"
+                                    />
+                                </div>
                                 <img
                                     src={
                                         displayImages[selectedImage]?.url ||

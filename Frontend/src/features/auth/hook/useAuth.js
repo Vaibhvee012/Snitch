@@ -2,6 +2,7 @@
 import { useDispatch } from "react-redux";
 import { setUser, setLoading } from "../state/auth.slice";
 import { register, login, getMe } from "../service/auth.api";
+import { clearWishlistItems } from "../../wishlist/state/wishlist.slice";
 
 export const useAuth = () => {
   const dispatch = useDispatch();
@@ -45,6 +46,7 @@ export const useAuth = () => {
       return data;
     } catch (error) {
       dispatch(setUser(null));
+      dispatch(clearWishlistItems());
 
       if (error.response?.status !== 401) {
         console.error("Unable to get current user:", error);

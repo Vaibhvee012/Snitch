@@ -1,5 +1,5 @@
 
-import React, { useEffect } from "react";
+import { useEffect } from "react";
 import { useSelector } from "react-redux";
 import { useNavigate } from "react-router-dom";
 import { useProduct } from "../hooks/useProduct";
@@ -13,7 +13,7 @@ const Home = () => {
     handleGetAllProducts().catch((error) => {
       console.error("Failed to fetch products:", error);
     });
-  }, []);
+  }, [handleGetAllProducts]);
 
   return (
     <>

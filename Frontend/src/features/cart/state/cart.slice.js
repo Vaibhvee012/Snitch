@@ -23,9 +23,11 @@ const cartSlice = createSlice({
 
     reducers: {
         setItems: (state, action) => {
-            state.items = Array.isArray(action.payload)
-                ? action.payload
-                : [];
+            const payload = action.payload;
+            const items = Array.isArray(payload)
+                ? payload
+                : payload?.items;
+            state.items = Array.isArray(items) ? items : [];
 
             state.totalQuantity = calculateTotalQuantity(state.items);
         },

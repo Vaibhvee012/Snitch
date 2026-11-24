@@ -1,7 +1,8 @@
-import React, { useEffect, useMemo } from "react";
+import { useEffect, useMemo } from "react";
 import { useSelector } from "react-redux";
 import { Link } from "react-router-dom";
 import { useCart } from "../../cart/hooks/useCart";
+import { useWishlist } from "../../wishlist/hooks/useWishlist";
 
 // Lucide ShoppingCart icon component
 const ShoppingCart = ({
@@ -33,14 +34,29 @@ const Nav = () => {
     const user = useSelector((state) => state.auth?.user);
     const cartItems = useSelector((state) => state.cart?.items || []);
     const totalQuantity = useSelector((state) => state.cart?.totalQuantity);
-    const { handleGetCart } = useCart();
+    const wishlistItems = useSelector((state) => state.wishlist?.items || []);
+    const { handleGetCart, handleClearCartState } = useCart();
+    const { handleGetWishlist, handleClearWishlistState } = useWishlist();
 
     // Fetch buyer's cart on mount if logged in
     useEffect(() => {
+        handleClearCartState();
+        handleClearWishlistState();
         if (user && user.role !== "seller") {
-            handleGetCart().catch(() => {});
+            handleGetCart().catch((error) => {
+                console.error("Could not load cart in navigation:", error);
+            });
+            handleGetWishlist().catch((error) => {
+                console.error("Could not load wishlist in navigation:", error);
+            });
         }
-    }, [user, handleGetCart]);
+    }, [
+        user,
+        handleGetCart,
+        handleClearCartState,
+        handleGetWishlist,
+        handleClearWishlistState,
+    ]);
 
     // Compute total quantity badge
     const itemCount = useMemo(() => {
@@ -121,32 +137,71 @@ const Nav = () => {
 
                     {/* Cart Icon: Visible strictly for buyers & non-sellers */}
                     {showCartIcon && (
-                        <Link
-                            to="/cart"
-                            className="relative p-1.5 flex items-center justify-center transition-colors hover:text-[#C9A96E]"
-                            style={{ color: "#1b1c1a" }}
-                            aria-label="Shopping Cart"
-                            title="View Shopping Cart"
-                        >
-                            <ShoppingCart size={20} strokeWidth={1.75} />
-                            {itemCount > 0 && (
-                                <span
-                                    className="absolute -top-1.5 -right-1.5 flex items-center justify-center rounded-full text-white shadow-sm"
-                                    style={{
-                                        backgroundColor: "#C9A96E",
-                                        minWidth: "16px",
-                                        height: "16px",
-                                        padding: "0 4px",
-                                        fontSize: "9px",
-                                        fontFamily: "'Inter', sans-serif",
-                                        fontWeight: 600,
-                                        lineHeight: 1,
-                                    }}
+                        <>
+                            <Link
+                                to="/wishlist"
+                                className="relative p-1.5 flex items-center justify-center transition-colors hover:text-[#C9A96E]"
+                                style={{ color: "#1b1c1a" }}
+                                aria-label="Wishlist"
+                                title="View Wishlist"
+                            >
+                                <svg
+                                    width="20"
+                                    height="20"
+                                    viewBox="0 0 24 24"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    strokeWidth="1.75"
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                    aria-hidden="true"
                                 >
-                                    {itemCount > 99 ? "99+" : itemCount}
-                                </span>
-                            )}
-                        </Link>
+                                    <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78L12 21.23l8.84-8.84a5.5 5.5 0 0 0 0-7.78z" />
+                                </svg>
+                                {wishlistItems.length > 0 && (
+                                    <span
+                                        className="absolute -top-1.5 -right-1.5 flex items-center justify-center rounded-full text-white shadow-sm"
+                                        style={{
+                                            backgroundColor: "#C9A96E",
+                                            minWidth: "16px",
+                                            height: "16px",
+                                            padding: "0 4px",
+                                            fontSize: "9px",
+                                            fontWeight: 600,
+                                            lineHeight: 1,
+                                        }}
+                                    >
+                                        {wishlistItems.length > 99 ? "99+" : wishlistItems.length}
+                                    </span>
+                                )}
+                            </Link>
+                            <Link
+                                to="/cart"
+                                className="relative p-1.5 flex items-center justify-center transition-colors hover:text-[#C9A96E]"
+                                style={{ color: "#1b1c1a" }}
+                                aria-label="Shopping Cart"
+                                title="View Shopping Cart"
+                            >
+                                <ShoppingCart size={20} strokeWidth={1.75} />
+                                {itemCount > 0 && (
+                                    <span
+                                        className="absolute -top-1.5 -right-1.5 flex items-center justify-center rounded-full text-white shadow-sm"
+                                        style={{
+                                            backgroundColor: "#C9A96E",
+                                            minWidth: "16px",
+                                            height: "16px",
+                                            padding: "0 4px",
+                                            fontSize: "9px",
+                                            fontFamily: "'Inter', sans-serif",
+                                            fontWeight: 600,
+                                            lineHeight: 1,
+                                        }}
+                                    >
+                                        {itemCount > 99 ? "99+" : itemCount}
+                                    </span>
+                                )}
+                            </Link>
+                        </>
                     )}
                 </div>
             </div>
