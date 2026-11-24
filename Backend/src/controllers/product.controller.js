@@ -1,6 +1,7 @@
-﻿
+
 import mongoose from "mongoose";
 import ProductModel from "./models/product.model.js";
+import cartModel from "./models/cart.model.js";
 import { uploadFile } from "../services/storage.service.js";
 
 // Create a new product
@@ -208,6 +209,109 @@ export async function getProductDetails(req, res) {
 
 // Alias for getProductDetails
 export const getProductById = getProductDetails;
+
+export async function updateProductPrice(req, res) {
+    try {
+        const { productId } = req.params;
+        const amount = Number(req.body?.amount);
+
+        if (!mongoose.Types.ObjectId.isValid(productId)) {
+            return res.status(400).json({
+                message: "Invalid product ID",
+                success: false,
+            });
+        }
+
+        if (
+            req.body?.amount === undefined ||
+            req.body.amount === "" ||
+            !Number.isFinite(amount) ||
+            amount <= 0
+        ) {
+            return res.status(400).json({
+                message: "Please provide a valid positive price",
+                success: false,
+            });
+        }
+
+        const product = await ProductModel.findOne({
+            _id: productId,
+            seller: req.user._id,
+        });
+
+        if (!product) {
+            return res.status(404).json({
+                message: "Product not found",
+                success: false,
+            });
+        }
+
+        const previousPrice = {
+            amount: Number(product.price.amount),
+            currency: product.price.currency,
+        };
+        const updatedPrice = {
+            amount,
+            currency: previousPrice.currency,
+        };
+
+        product.variants.forEach(variant => {
+            if (
+                Number(variant.price?.amount) === previousPrice.amount &&
+                variant.price?.currency === previousPrice.currency
+            ) {
+                variant.price = updatedPrice;
+            }
+        });
+        product.price = updatedPrice;
+        await product.save();
+
+        const carts = await cartModel.find({ "items.product": product._id });
+        const cartUpdates = [];
+        for (const cart of carts) {
+            let cartChanged = false;
+
+            for (const item of cart.items) {
+                if (item.product.toString() !== product._id.toString()) continue;
+
+                const variant = product.variants.find(
+                    productVariant => productVariant._id.toString() === item.variant.toString()
+                );
+                if (!variant) continue;
+
+                if (!item.priceAtAddition) {
+                    item.priceAtAddition = item.price || previousPrice;
+                    cartChanged = true;
+                }
+
+                const currentPrice = variant.price || product.price;
+                if (
+                    Number(item.price?.amount) !== Number(currentPrice.amount) ||
+                    item.price?.currency !== currentPrice.currency
+                ) {
+                    item.price = currentPrice;
+                    cartChanged = true;
+                }
+            }
+
+            if (cartChanged) cartUpdates.push(cart.save());
+        }
+        await Promise.all(cartUpdates);
+
+        return res.status(200).json({
+            message: "Product price updated successfully",
+            success: true,
+            product,
+        });
+    } catch (error) {
+        console.error("Update product price error:", error);
+
+        return res.status(500).json({
+            message: error.message,
+            success: false,
+        });
+    }
+}
 
 
 // Add a new variant to an existing product

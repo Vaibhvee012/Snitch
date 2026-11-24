@@ -26,7 +26,9 @@ const cartSchema = new mongoose.Schema(
                 },
                 price: {
                     type: priceSchema,
-                    required: true,
+                },
+                priceAtAddition: {
+                    type: priceSchema,
                 },
             },
         ],

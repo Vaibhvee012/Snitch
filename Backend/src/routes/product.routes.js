@@ -1,4 +1,4 @@
-﻿
+
 import express from "express";
 import multer from "multer";
 
@@ -11,6 +11,7 @@ import {
     getAllProducts,
     getProductById,
     addProductVariant,
+    updateProductPrice,
 } from "../controllers/product.controller.js";
 
 const router = express.Router();
@@ -43,6 +44,8 @@ router.get("/", getAllProducts);
 
 // Get product details
 router.get("/details/:id", getProductById);
+
+router.patch("/:productId/price", authenticateSeller, updateProductPrice);
 
 // Add a product variant
 router.post(

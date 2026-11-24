@@ -30,6 +30,11 @@ export async function getProductById(productId) {
     return response.data;
 }
 
+export async function updateProductPrice(productId, amount) {
+    const response = await productApiInstance.patch(`/${productId}/price`, { amount });
+    return response.data;
+}
+
 // Add a variant to an existing product
 export async function addProductVariant(productId, newProductVariant) {
     const formData = new FormData();

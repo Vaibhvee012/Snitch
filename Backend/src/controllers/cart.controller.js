@@ -21,6 +21,32 @@ const ensureCart = async userId => {
 const getCartResponse = async cart => {
     await cart.populate({ path: "items.product", model: productModel });
 
+    let cartChanged = false;
+    for (const item of cart.items) {
+        const product = item.product;
+        const variantId = item.variant?._id || item.variant;
+        const variant = product?.variants?.find(
+            productVariant => productVariant._id.toString() === variantId?.toString()
+        );
+        const currentPrice = variant?.price || product?.price;
+
+        if (!item.priceAtAddition) {
+            item.priceAtAddition = item.price || currentPrice;
+            cartChanged = true;
+        }
+
+        if (
+            currentPrice &&
+            (Number(item.price?.amount) !== Number(currentPrice.amount) ||
+                item.price?.currency !== currentPrice.currency)
+        ) {
+            item.price = currentPrice;
+            cartChanged = true;
+        }
+    }
+
+    if (cartChanged) await cart.save();
+
     const cartData = cart.toObject({ flattenMaps: true });
     cartData.items = cartData.items.map(item => {
         const product = item.product;
@@ -29,12 +55,24 @@ const getCartResponse = async cart => {
             productVariant => productVariant._id.toString() === variantId?.toString()
         );
 
+        const priceAtAddition = item.priceAtAddition || item.price || null;
+        const currentPrice = variant?.price || product?.price || priceAtAddition;
+
         return {
             ...item,
             variant: variant || item.variant,
-            price: variant?.price || item.price
+            price: currentPrice,
+            priceAtAddition,
         };
     });
+    cartData.totalPrice = cartData.items.reduce(
+        (total, item) => total + (Number(item.price?.amount) || 0) * item.quantity,
+        0
+    );
+    cartData.totalQuantity = cartData.items.reduce(
+        (total, item) => total + item.quantity,
+        0
+    );
 
     return cartData;
 };
@@ -83,13 +121,17 @@ export const addToCart = async (req, res) => {
         }
 
         existingItem.quantity += quantity;
+        if (!existingItem.priceAtAddition) {
+            existingItem.priceAtAddition = existingItem.price || variant.price;
+        }
         existingItem.price = variant.price;
     } else {
         cart.items.push({
             product: productId,
             variant: variantId,
             quantity,
-            price: variant.price
+            price: variant.price,
+            priceAtAddition: variant.price,
         });
     }
     await cart.save()

@@ -1,10 +1,11 @@
-import React, { useCallback } from "react";
+import { useCallback } from "react";
 import {
   createProduct,
   getSellerProduct,
   getAllProducts,
   getProductById,
   addProductVariant,
+  updateProductPrice,
 } from "../service/product.api";
 import { useDispatch } from "react-redux";
 import { setSellerProducts, setProducts } from "../state/product.slice";
@@ -36,6 +37,11 @@ export const useProduct = () => {
     return data?.product || data;
   }, []);
 
+  const handleUpdateProductPrice = useCallback(async (productId, amount) => {
+    const data = await updateProductPrice(productId, amount);
+    return data.product;
+  }, []);
+
   const handleAddProductVariant = useCallback(async (productId, newProductVariant) => {
     const data = await addProductVariant(productId, newProductVariant);
     return data;
@@ -46,6 +52,7 @@ export const useProduct = () => {
     handleGetSellerProduct,
     handleGetAllProducts,
     handleGetProductById,
+    handleUpdateProductPrice,
     handleAddProductVariant,
     handleAddVariant: handleAddProductVariant,
   };

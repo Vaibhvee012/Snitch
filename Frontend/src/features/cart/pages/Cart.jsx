@@ -1,7 +1,7 @@
-import React, { useEffect, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useSelector } from 'react-redux'
 import { useCart } from '../hooks/useCart'
-import { Link, useNavigate } from 'react-router'
+import { Link, useNavigate } from 'react-router-dom'
 import { useRazorpay } from "react-razorpay";
 
 /* ─── Inline styles & tokens matching the "Avenue Montaigne" design system ─── */
@@ -22,30 +22,36 @@ const tokens = {
 }
 
 const Cart = () => {
-    const cart = useSelector(state => state.cart)
-    const { handleGetCart, handleIncrementCartItem, handleCreateCartOrder, handleVerifyCartOrder } = useCart()
+    const cart = useSelector(state => state.cart) ?? { items: [] }
+    const cartItems = Array.isArray(cart.items) ? cart.items : []
+    const {
+        handleGetCart,
+        handleIncrementCartItem,
+        handleDecrementCartItem,
+        handleRemoveCartItem,
+        handleCreateCartOrder,
+        handleVerifyCartOrder,
+    } = useCart()
     const navigate = useNavigate()
-    const { error, isLoading, Razorpay } = useRazorpay();
-    const user = useSelector(state => state.user)
+    const { Razorpay } = useRazorpay();
+    const user = useSelector(state => state.auth?.user)
 
-    /* Local quantity state — key: cartItem._id, value: number */
-    const [ quantities, setQuantities ] = useState({})
+    const [cartActionError, setCartActionError] = useState("")
+    const [isLoadingCart, setIsLoadingCart] = useState(true)
 
     useEffect(() => {
-        handleGetCart()
-    }, [])
+        handleGetCart().catch((requestError) => {
+            setCartActionError(requestError.response?.data?.message || requestError.message || "Could not load your cart.");
+        }).finally(() => {
+            setIsLoadingCart(false)
+        })
+    }, [handleGetCart])
 
-
-    const changeQty = (id, delta) => {
-        setQuantities(prev => ({
-            ...prev,
-            [ id ]: Math.max(1, (prev[ id ] ?? 1) + delta),
-        }))
-    }
     /* ─── Helpers ─── */
-    const getVariantDetails = (product, variantId) => {
-        if (!product?.variants || !variantId) return null
-        return product.variants
+    const getVariantDetails = (product, variantReference) => {
+        if (variantReference && typeof variantReference === "object") return variantReference
+        if (!product?.variants || !variantReference) return null
+        return product.variants.find((variant) => variant._id === variantReference) || null
     }
 
     const getDisplayImage = (product, variant) => {
@@ -56,6 +62,30 @@ const Cart = () => {
 
     const formatCurrency = (amount, currency = 'INR') =>
         `${currency} ${Number(amount).toLocaleString('en-IN')}`
+
+    const cartSubtotal = cartItems.reduce((total, item) => {
+        const price = item.price ?? item.variant?.price ?? item.product?.price
+        return total + (Number(price?.amount) || 0) * (Number(item.quantity) || 1)
+    }, 0)
+
+    if (isLoadingCart && !cartItems.length) {
+        return (
+            <div className="min-h-screen flex items-center justify-center" style={{ backgroundColor: tokens.surface }}>
+                <p className="text-[10px] uppercase tracking-[0.2em] animate-pulse" style={{ color: tokens.muted }}>
+                    Updating your selection...
+                </p>
+            </div>
+        )
+    }
+
+    const updateCartItem = async (action) => {
+        setCartActionError("")
+        try {
+            await action()
+        } catch (requestError) {
+            setCartActionError(requestError.response?.data?.message || requestError.message || "Could not update your cart.");
+        }
+    }
 
 
     async function handleCheckout() {
@@ -93,7 +123,7 @@ const Cart = () => {
     }
 
     /* ─── Empty state ─── */
-    if (!cart?.items?.length) {
+    if (!cartItems.length) {
         return (
             <>
                 <link
@@ -138,6 +168,11 @@ const Cart = () => {
                         >
                             Curate your collection
                         </p>
+                        {cartActionError && (
+                            <p role="alert" className="max-w-md text-center text-sm text-red-700">
+                                {cartActionError}
+                            </p>
+                        )}
                         <Link
                             to="/"
                             className="mt-4 px-10 py-4 text-[11px] uppercase tracking-[0.25em] font-medium transition-all duration-300"
@@ -200,26 +235,36 @@ const Cart = () => {
                                     className="text-[10px] uppercase tracking-[0.24em] font-medium"
                                     style={{ color: tokens.muted }}
                                 >
-                                    {cart?.items?.length} {cart?.items?.length === 1 ? 'piece' : 'pieces'}
+                                    {cartItems.length} {cartItems.length === 1 ? 'piece' : 'pieces'}
                                 </p>
                             </div>
+                            {cartActionError && (
+                                <p role="alert" className="mb-6 border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
+                                    {cartActionError}
+                                </p>
+                            )}
 
                             {/* ── Cart Item List ── */}
                             <div className="flex flex-col gap-6">
-                                {cart.items.map(item => {
-                                    const { product, variant: variantId, price, product: { _id } } = item
-                                    const variantDetail = getVariantDetails(product, variantId)
+                                {cartItems.map(item => {
+                                    const product = item.product
+                                    const variantId = item.variant?._id || item.variant
+                                    const variantDetail = getVariantDetails(product, item.variant)
                                     const imageUrl = getDisplayImage(product, variantDetail)
-                                    const displayPrice = price ?? variantDetail?.price ?? product?.price
-                                    const qty = quantities[ _id ] ?? item.quantity ?? 1
+                                    const displayPrice = item.price ?? variantDetail?.price ?? product?.price
+                                    const originalPrice = item.priceAtAddition ?? item.price
+                                    const qty = item.quantity ?? 1
                                     const attributes = variantDetail?.attributes ?? {}
                                     const stock = variantDetail?.stock
-                                    const variantPrice = variantDetail?.price
+                                    const priceDifference = originalPrice && displayPrice &&
+                                        originalPrice.currency === displayPrice.currency
+                                        ? Number(originalPrice.amount) - Number(displayPrice.amount)
+                                        : 0
 
 
                                     return (
                                         <div
-                                            key={_id}
+                                            key={item._id}
                                             className="flex gap-6 md:gap-8 p-6 md:p-8 transition-all duration-300"
                                             style={{ backgroundColor: tokens.surfaceLow }}
                                         >
@@ -258,7 +303,7 @@ const Cart = () => {
                                                             color: tokens.onSurface,
                                                         }}
                                                     >
-                                                        {product?.title}
+                                                        {product?.title || "Product unavailable"}
                                                     </h2>
 
                                                     {/* Variant Attribute Chips */}
@@ -286,11 +331,16 @@ const Cart = () => {
                                                     >
                                                         {displayPrice
                                                             ? formatCurrency(displayPrice.amount, displayPrice.currency)
-                                                            : '—'}
+                                                            : 'Price unavailable'}
                                                     </p>
+                                                    {displayPrice && (
+                                                        <p className="mb-2 text-[10px] uppercase tracking-[0.14em]" style={{ color: tokens.secondary }}>
+                                                            Item total: {formatCurrency(Number(displayPrice.amount) * qty, displayPrice.currency)}
+                                                        </p>
+                                                    )}
 
                                                     {/* Stock */}
-                                                    {stock !== undefined && (
+                                                    {stock !== undefined && product && (
                                                         <p
                                                             className="text-[10px] uppercase tracking-[0.15em] mb-4"
                                                             style={{ color: tokens.muted }}
@@ -298,16 +348,40 @@ const Cart = () => {
                                                             {stock > 0 ? `${stock} in stock` : 'Out of stock'}
                                                         </p>
                                                     )}
-                                                    {
-                                                        displayPrice.amount !== variantPrice.amount && (
-                                                            <>
-                                                                {displayPrice.amount > variantPrice.amount
-                                                                    ? <p className="text-[10px] uppercase tracking-[0.15em] mb-4 text-green-800 font-bold" > you will get this at {formatCurrency(variantPrice.amount, variantPrice.currency)} save {Math.abs(variantPrice.amount - displayPrice.amount)}.  </p>
-                                                                    : <p className="text-[10px] uppercase tracking-[0.15em] mb-4 text-red-600 font-bold" > Warning this product will cost you {Math.abs(variantPrice.amount - displayPrice.amount)} more.  </p>
-                                                                }
-                                                            </>
+                                                    {priceDifference !== 0 && (
+                                                        priceDifference > 0 ? (
+                                                            <div className="mb-4 border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-800">
+                                                                <p className="font-medium">
+                                                                    <span aria-hidden="true" className="mr-1">✓</span>
+                                                                    Hurray! You save {formatCurrency(priceDifference, displayPrice.currency)} per item.
+                                                                </p>
+                                                                <p className="mt-1">
+                                                                    Get it for {formatCurrency(displayPrice.amount, displayPrice.currency)} now!
+                                                                    {" "}Was{" "}
+                                                                    <span className="line-through">
+                                                                        {formatCurrency(originalPrice.amount, originalPrice.currency)}
+                                                                    </span>
+                                                                </p>
+                                                                <p className="mt-1 font-semibold">
+                                                                    You save {formatCurrency(priceDifference * qty, displayPrice.currency)} in total.
+                                                                </p>
+                                                            </div>
+                                                        ) : (
+                                                            <div className="mb-4 border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-800">
+                                                                <p className="font-medium">
+                                                                    <span aria-hidden="true" className="mr-1">!</span>
+                                                                    Price increased by {formatCurrency(Math.abs(priceDifference), displayPrice.currency)} per item.
+                                                                </p>
+                                                                <p className="mt-1">
+                                                                    The new price is {formatCurrency(displayPrice.amount, displayPrice.currency)}.
+                                                                    {" "}Previous price:{" "}
+                                                                    <span className="line-through">
+                                                                        {formatCurrency(originalPrice.amount, originalPrice.currency)}
+                                                                    </span>
+                                                                </p>
+                                                            </div>
                                                         )
-                                                    }
+                                                    )}
                                                 </div>
 
                                                 {/* Bottom Row: Quantity + Remove */}
@@ -318,8 +392,9 @@ const Cart = () => {
                                                         style={{ border: `1px solid ${tokens.outlineVariant}` }}
                                                     >
                                                         <button
-                                                            id={`qty-dec-${_id}`}
-                                                            onClick={() => changeQty(_id, -1)}
+                                                            id={`qty-dec-${item._id}`}
+                                                            disabled={qty <= 1 || !product}
+                                                            onClick={() => updateCartItem(() => handleDecrementCartItem({ itemId: item._id, currentQty: qty }))}
                                                             className="w-9 h-9 flex items-center justify-center text-sm font-light transition-colors hover:opacity-60"
                                                             style={{ color: tokens.onSurface, borderRight: `1px solid ${tokens.outlineVariant}` }}
                                                             aria-label="Decrease quantity"
@@ -333,8 +408,9 @@ const Cart = () => {
                                                             {qty}
                                                         </span>
                                                         <button
-                                                            id={`qty-inc-${_id}`}
-                                                            onClick={() => handleIncrementCartItem({ productId: _id, variantId })}
+                                                            id={`qty-inc-${item._id}`}
+                                                            disabled={!product}
+                                                            onClick={() => updateCartItem(() => handleIncrementCartItem({ itemId: item._id, productId: product?._id, variantId, currentQty: qty }))}
                                                             className="w-9 h-9 flex items-center justify-center text-sm font-light transition-colors hover:opacity-60"
                                                             style={{ color: tokens.onSurface, borderLeft: `1px solid ${tokens.outlineVariant}` }}
                                                             aria-label="Increase quantity"
@@ -345,7 +421,8 @@ const Cart = () => {
 
                                                     {/* Remove */}
                                                     <button
-                                                        id={`remove-${_id}`}
+                                                        id={`remove-${item._id}`}
+                                                        onClick={() => updateCartItem(() => handleRemoveCartItem(item._id))}
                                                         className="text-[10px] uppercase tracking-[0.22em] font-medium transition-all duration-200 hover:underline hover:opacity-70"
                                                         style={{ color: tokens.muted }}
                                                     >
@@ -414,7 +491,7 @@ const Cart = () => {
                                             className="text-[11px] uppercase tracking-[0.12em] font-medium"
                                             style={{ color: tokens.onSurface }}
                                         >
-                                            {formatCurrency(cart.totalPrice)}
+                                            {formatCurrency(cartSubtotal)}
                                         </span>
                                     </div>
 
@@ -427,9 +504,9 @@ const Cart = () => {
                                         </span>
                                         <span
                                             className="text-[10px] uppercase tracking-[0.1em]"
-                                            style={{ color: cart.totalPrice >= 15000 ? '#5a7a5a' : tokens.muted }}
+                                            style={{ color: cartSubtotal >= 15000 ? '#5a7a5a' : tokens.muted }}
                                         >
-                                            {cart.totalPrice >= 15000 ? 'Complimentary' : `Complimentary over INR 15,000`}
+                                            {cartSubtotal >= 15000 ? 'Complimentary' : `Complimentary over INR 15,000`}
                                         </span>
                                     </div>
 
@@ -464,7 +541,7 @@ const Cart = () => {
                                         className="text-base uppercase tracking-[0.18em] font-medium"
                                         style={{ color: tokens.onSurface }}
                                     >
-                                        {formatCurrency(cart.totalPrice)}
+                                        {formatCurrency(cartSubtotal)}
                                     </span>
                                 </div>
 

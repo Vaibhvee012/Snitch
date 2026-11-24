@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useMemo, useCallback, useRef } from "react";
+import { useEffect, useState, useMemo, useCallback, useRef } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
 import { useProduct } from "../hooks/useProduct";
 
@@ -85,6 +85,7 @@ const SellerProductDetails = () => {
   const {
     handleGetProductById,
     handleAddVariant,
+    handleUpdateProductPrice,
   } = useProduct();
 
   // State
@@ -94,6 +95,9 @@ const SellerProductDetails = () => {
   const [selectedMainImg, setSelectedMainImg] = useState(0);
   const [errorMsg, setErrorMsg] = useState("");
   const [toast, setToast] = useState(null);
+  const [isEditingPrice, setIsEditingPrice] = useState(false);
+  const [priceInput, setPriceInput] = useState("");
+  const [isSavingPrice, setIsSavingPrice] = useState(false);
 
   // Search & Filter
   const [searchQuery, setSearchQuery] = useState("");
@@ -130,6 +134,47 @@ const SellerProductDetails = () => {
     setTimeout(() => {
       setToast(null);
     }, 3500);
+  };
+
+  const handleSaveProductPrice = async () => {
+    const amount = Number(priceInput);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      showToast("Enter a valid positive price.", "error");
+      return;
+    }
+
+    setIsSavingPrice(true);
+    try {
+      const updatedProduct = await handleUpdateProductPrice(productId, amount);
+      const updatedVariants = (product?.variants || []).map((variant) => {
+        const variantPrice = variant.price;
+        const inheritedPrice =
+          Number(variantPrice?.amount) === Number(product.price?.amount) &&
+          variantPrice?.currency === product.price?.currency;
+
+        return inheritedPrice
+          ? {
+              ...variant,
+              price: {
+                amount,
+                currency: product.price?.currency || "INR",
+              },
+            }
+          : variant;
+      });
+
+      persistLocalVariants(productId, updatedVariants);
+      setProduct({ ...updatedProduct, variants: updatedVariants });
+      setIsEditingPrice(false);
+      showToast("Product price updated successfully.");
+    } catch (error) {
+      showToast(
+        error.response?.data?.message || error.message || "Could not update the product price.",
+        "error"
+      );
+    } finally {
+      setIsSavingPrice(false);
+    }
   };
 
   // Synchronize variants state and save to local storage
@@ -859,10 +904,53 @@ const SellerProductDetails = () => {
                       <span className="block text-[9px] uppercase tracking-[0.2em] text-[#B5ADA3] font-medium">
                         Standard Base Price
                       </span>
-                      <span className="text-xl font-light tracking-wide text-[#1b1c1a]">
-                        {product.price?.currency || "INR"}{" "}
-                        {Number(product.price?.amount || 0).toLocaleString()}
-                      </span>
+                      <div className="flex items-center gap-3">
+                        <span className="text-xl font-light tracking-wide text-[#1b1c1a]">
+                          {product.price?.currency || "INR"}{" "}
+                          {Number(product.price?.amount || 0).toLocaleString()}
+                        </span>
+                        {!isEditingPrice && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setPriceInput(String(product.price?.amount ?? ""));
+                              setIsEditingPrice(true);
+                            }}
+                            className="text-[9px] uppercase tracking-[0.16em] underline underline-offset-4 text-[#7A6E63] hover:text-[#C9A96E]"
+                          >
+                            Edit Price
+                          </button>
+                        )}
+                      </div>
+                      {isEditingPrice && (
+                        <div className="mt-3 flex flex-wrap items-center gap-2">
+                          <input
+                            aria-label="New product price"
+                            type="number"
+                            min="0.01"
+                            step="0.01"
+                            value={priceInput}
+                            onChange={(event) => setPriceInput(event.target.value)}
+                            className="w-32 border border-[#d0c5b5] bg-white px-3 py-2 text-sm text-[#1b1c1a] outline-none focus:border-[#C9A96E]"
+                          />
+                          <button
+                            type="button"
+                            onClick={handleSaveProductPrice}
+                            disabled={isSavingPrice}
+                            className="bg-[#1b1c1a] px-3 py-2 text-[9px] uppercase tracking-[0.15em] text-white disabled:opacity-50"
+                          >
+                            {isSavingPrice ? "Saving..." : "Save Changes"}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setIsEditingPrice(false)}
+                            disabled={isSavingPrice}
+                            className="border border-[#d0c5b5] px-3 py-2 text-[9px] uppercase tracking-[0.15em] text-[#7A6E63] disabled:opacity-50"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      )}
                     </div>
 
                     <div className="h-8 w-px bg-[#ede9e3]" />
