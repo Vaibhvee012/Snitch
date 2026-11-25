@@ -12,6 +12,8 @@ import {
     getProductById,
     addProductVariant,
     updateProductPrice,
+    updateProductVariantStock,
+    updateProductVariantPrice,
 } from "../controllers/product.controller.js";
 
 const router = express.Router();
@@ -46,6 +48,17 @@ router.get("/", getAllProducts);
 router.get("/details/:id", getProductById);
 
 router.patch("/:productId/price", authenticateSeller, updateProductPrice);
+
+router.patch(
+    "/:productId/variants/:variantId/stock",
+    authenticateSeller,
+    updateProductVariantStock
+);
+router.patch(
+    "/:productId/variants/:variantId/price",
+    authenticateSeller,
+    updateProductVariantPrice
+);
 
 // Add a product variant
 router.post(

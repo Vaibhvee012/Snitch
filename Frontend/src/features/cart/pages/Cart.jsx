@@ -48,11 +48,31 @@ const Cart = () => {
     }, [handleGetCart])
 
     /* ─── Helpers ─── */
-    const getVariantDetails = (product, variantReference) => {
-        if (variantReference && typeof variantReference === "object") return variantReference
-        if (!product?.variants || !variantReference) return null
-        return product.variants.find((variant) => variant._id === variantReference) || null
+    
+const getVariantDetails = (product, variantReference) => {
+    if (!product?.variants || !variantReference) return null;
+
+    const variantId =
+        typeof variantReference === "object"
+            ? variantReference._id
+            : variantReference;
+
+    if (Array.isArray(product.variants)) {
+        return product.variants.find(
+            variant =>
+                variant._id?.toString() === variantId?.toString()
+        ) || null;
     }
+
+    if (
+        product.variants._id?.toString() === variantId?.toString()
+    ) {
+        return product.variants;
+    }
+
+    return null;
+};
+
 
     const getDisplayImage = (product, variant) => {
         if (variant?.images?.length) return variant.images[ 0 ].url
@@ -67,6 +87,11 @@ const Cart = () => {
         const price = item.price ?? item.variant?.price ?? item.product?.price
         return total + (Number(price?.amount) || 0) * (Number(item.quantity) || 1)
     }, 0)
+    const hasUnavailableCartItems = cartItems.some((item) => {
+        const variant = getVariantDetails(item.product, item.variant)
+        const quantity = Number(item.quantity) || 1
+        return !item.product || !variant || Number(variant.stock ?? 0) < quantity
+    })
 
     if (isLoadingCart && !cartItems.length) {
         return (
@@ -546,12 +571,19 @@ const Cart = () => {
                                 </div>
 
                                 {/* Primary CTA */}
+                                {hasUnavailableCartItems && (
+                                    <p role="alert" className="mb-3 text-xs text-red-700">
+                                        One or more items are unavailable or exceed current stock. Update or remove them before checkout.
+                                    </p>
+                                )}
                                 <button
                                     id="proceed-checkout"
+                                    disabled={hasUnavailableCartItems}
                                     className="w-full py-4 mb-3 text-[11px] uppercase tracking-[0.25em] font-medium transition-all duration-300"
                                     style={{
-                                        backgroundColor: tokens.onSurface,
+                                        backgroundColor: hasUnavailableCartItems ? tokens.muted : tokens.onSurface,
                                         color: tokens.surface,
+                                        cursor: hasUnavailableCartItems ? "not-allowed" : "pointer",
                                     }}
                                     onMouseEnter={e => {
                                         e.currentTarget.style.backgroundColor = tokens.primary

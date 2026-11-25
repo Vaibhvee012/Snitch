@@ -6,6 +6,8 @@ import {
   getProductById,
   addProductVariant,
   updateProductPrice,
+  updateProductVariantStock,
+  updateProductVariantPrice,
 } from "../service/product.api";
 import { useDispatch } from "react-redux";
 import { setSellerProducts, setProducts } from "../state/product.slice";
@@ -42,6 +44,16 @@ export const useProduct = () => {
     return data.product;
   }, []);
 
+  const handleUpdateProductVariantStock = useCallback(async (productId, variantId, stock) => {
+    const data = await updateProductVariantStock(productId, variantId, stock);
+    return data.product;
+  }, []);
+
+  const handleUpdateProductVariantPrice = useCallback(async (productId, variantId, amount) => {
+    const data = await updateProductVariantPrice(productId, variantId, amount);
+    return data.product;
+  }, []);
+
   const handleAddProductVariant = useCallback(async (productId, newProductVariant) => {
     const data = await addProductVariant(productId, newProductVariant);
     return data;
@@ -53,6 +65,8 @@ export const useProduct = () => {
     handleGetAllProducts,
     handleGetProductById,
     handleUpdateProductPrice,
+    handleUpdateProductVariantStock,
+    handleUpdateProductVariantPrice,
     handleAddProductVariant,
     handleAddVariant: handleAddProductVariant,
   };

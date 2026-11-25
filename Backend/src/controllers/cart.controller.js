@@ -1,6 +1,7 @@
 import cartModel from "./models/cart.model.js";
 import productModel from "./models/product.model.js";
 import { stockOfVariant } from "../dao/product.dao.js";
+import mongoose from "mongoose";
 
 const ensureCart = async userId => {
     try {
@@ -143,15 +144,88 @@ export const addToCart = async (req, res) => {
     })
 }
 
-export const getCart = async (req, res) => {
-    const cart = await ensureCart(req.user._id);
 
-    return res.status(200).json({
-        message: "Cart fetched successfully",
-        success: true,
-        cart: await getCartResponse(cart)
-    })
-}
+export const getCart = async (req, res) => {
+    try {
+        const cart = await cartModel.aggregate([
+            {
+                $match: {
+                    user: new mongoose.Types.ObjectId(req.user._id)
+                }
+            },
+            { $unwind: { path: "$items" } },
+            {
+                $lookup: {
+                    from: "products",
+                    localField: "items.product",
+                    foreignField: "_id",
+                    as: "items.product"
+                }
+            },
+            { $unwind: { path: "$items.product" } },
+            {
+                $unwind: {
+                    path: "$items.product.variants"
+                }
+            },
+            {
+                $match: {
+                    $expr: {
+                        $eq: [
+                            "$items.variant",
+                            "$items.product.variants._id"
+                        ]
+                    }
+                }
+            },
+            {
+                $addFields: {
+                    itemPrice: {
+                        price: {
+                            $multiply: [
+                                "$items.quantity",
+                                "$items.product.variants.price.amount"
+                            ]
+                        },
+                        currency: "$items.product.variants.price.currency"
+                    }
+                }
+            },
+            {
+                $group: {
+                    _id: "$_id",
+                    totalPrice: {
+                        $sum: "$itemPrice.price"
+                    },
+                    currency: {
+                        $first: "$itemPrice.currency"
+                    },
+                    items: {
+                        $push: "$items"
+                    }
+                }
+            }
+        ]);
+
+        return res.status(200).json({
+            message: "Cart fetched successfully",
+            success: true,
+            cart: cart[0] || {
+                items: [],
+                totalPrice: 0,
+                totalQuantity: 0
+            }
+        });
+
+    } catch (error) {
+        console.error("Get Cart Error:", error);
+
+        return res.status(500).json({
+            message: "Failed to fetch cart",
+            success: false
+        });
+    }
+};
 
 export const incrementCartItemQuantity = async (req, res) => {
     const { productId, variantId } = req.params

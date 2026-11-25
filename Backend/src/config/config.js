@@ -1,6 +1,12 @@
 import dotenv from "dotenv";
+import { fileURLToPath } from "node:url";
 
-dotenv.config();
+const backendEnvPath = fileURLToPath(new URL("../../.env", import.meta.url));
+const envResult = dotenv.config({ path: backendEnvPath });
+
+if (envResult.error && envResult.error.code !== "ENOENT") {
+    throw envResult.error;
+}
 
 if(!process.env.MONGO_URI) {
     throw new Error("MONGO_URI is not set");

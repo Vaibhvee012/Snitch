@@ -5,6 +5,7 @@ const priceSchema = new mongoose.Schema(
         amount: {
             type: Number,
             required: true,
+            min: Number.MIN_VALUE,
         },
         currency: {
             type: String,

@@ -2,6 +2,7 @@ import { useEffect, useState, useMemo, useCallback } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useSelector } from "react-redux";
 import { useProduct } from "../hooks/useProduct";
+import { formatProductPriceRange, getProductPriceRange } from "../utils/productPrice";
 
 const Dashboard = () => {
   const navigate = useNavigate();
@@ -99,13 +100,13 @@ const Dashboard = () => {
           return new Date(a.createdAt || 0) - new Date(b.createdAt || 0);
         }
         if (sortBy === "price-asc") {
-          const priceA = Number(a?.price?.amount) || 0;
-          const priceB = Number(b?.price?.amount) || 0;
+          const priceA = getProductPriceRange(a).min;
+          const priceB = getProductPriceRange(b).min;
           return priceA - priceB;
         }
         if (sortBy === "price-desc") {
-          const priceA = Number(a?.price?.amount) || 0;
-          const priceB = Number(b?.price?.amount) || 0;
+          const priceA = getProductPriceRange(a).min;
+          const priceB = getProductPriceRange(b).min;
           return priceB - priceA;
         }
         if (sortBy === "title-asc") {
@@ -119,7 +120,7 @@ const Dashboard = () => {
   const stats = useMemo(() => {
     const totalCount = products.length;
     const totalCatalogValue = products.reduce((acc, p) => {
-      const amt = Number(p?.price?.amount) || 0;
+      const amt = getProductPriceRange(p).min;
       return acc + amt;
     }, 0);
     const avgPrice = totalCount > 0 ? Math.round(totalCatalogValue / totalCount) : 0;
@@ -499,8 +500,7 @@ const Dashboard = () => {
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-8">
               {filteredProducts.map((product) => {
                 const primaryImage = product.images?.[0]?.url || "https://images.unsplash.com/photo-1521572267360-ee0c2909d518?auto=format&fit=crop&w=800&q=80";
-                const priceFormatted = Number(product?.price?.amount || 0).toLocaleString("en-IN");
-                const currency = product?.price?.currency || "INR";
+                const priceFormatted = formatProductPriceRange(product);
 
                 return (
                   <article
@@ -586,7 +586,6 @@ const Dashboard = () => {
                             Price
                           </span>
                           <span className="text-base font-semibold tracking-tight text-[#1b1c1a]">
-                            {currency === "INR" ? "₹" : currency}{" "}
                             {priceFormatted}
                           </span>
                         </div>
@@ -635,8 +634,7 @@ const Dashboard = () => {
                 <tbody className="divide-y divide-[#ede9e3]">
                   {filteredProducts.map((product) => {
                     const primaryImage = product.images?.[0]?.url || "https://images.unsplash.com/photo-1521572267360-ee0c2909d518?auto=format&fit=crop&w=800&q=80";
-                    const priceFormatted = Number(product?.price?.amount || 0).toLocaleString("en-IN");
-                    const currency = product?.price?.currency || "INR";
+                    const priceFormatted = formatProductPriceRange(product);
 
                     return (
                       <tr
@@ -672,7 +670,7 @@ const Dashboard = () => {
                         </td>
 
                         <td className="py-4 px-6 font-semibold text-[#1b1c1a]">
-                          {currency === "INR" ? "₹" : currency} {priceFormatted}
+                          {priceFormatted}
                         </td>
 
                         <td className="py-4 px-6 text-[#7A6E63]">
@@ -820,11 +818,7 @@ const Dashboard = () => {
                     {/* Price tag */}
                     <div className="mt-4 flex items-baseline gap-2">
                       <span className="text-2xl font-light tracking-tight text-[#1b1c1a]">
-                        {selectedProduct.price?.currency === "INR" ? "₹" : selectedProduct.price?.currency}{" "}
-                        {Number(selectedProduct.price?.amount || 0).toLocaleString("en-IN")}
-                      </span>
-                      <span className="text-[10px] uppercase tracking-widest text-[#7A6E63]">
-                        {selectedProduct.price?.currency || "INR"}
+                        {formatProductPriceRange(selectedProduct)}
                       </span>
                     </div>
 

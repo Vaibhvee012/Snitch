@@ -50,35 +50,6 @@ const normalizeAttributes = (attr) => {
   return {};
 };
 
-// LocalStorage helpers
-const getLocalVariantsKey = (productId) => `snitch_variants_${productId}`;
-
-const loadLocalVariants = (productId) => {
-  try {
-    const raw = localStorage.getItem(getLocalVariantsKey(productId));
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed)) {
-        return parsed.map((v) => ({
-          ...v,
-          attributes: normalizeAttributes(v.attributes),
-        }));
-      }
-    }
-  } catch (err) {
-    console.warn("Failed to load local variants from localStorage:", err);
-  }
-  return null;
-};
-
-const persistLocalVariants = (productId, variants) => {
-  try {
-    localStorage.setItem(getLocalVariantsKey(productId), JSON.stringify(variants));
-  } catch (err) {
-    console.warn("Failed to persist variants to localStorage:", err);
-  }
-};
-
 const SellerProductDetails = () => {
   const { productId } = useParams();
   const navigate = useNavigate();
@@ -86,6 +57,8 @@ const SellerProductDetails = () => {
     handleGetProductById,
     handleAddVariant,
     handleUpdateProductPrice,
+    handleUpdateProductVariantStock,
+    handleUpdateProductVariantPrice,
   } = useProduct();
 
   // State
@@ -109,7 +82,7 @@ const SellerProductDetails = () => {
   const [isSubmittingVariant, setIsSubmittingVariant] = useState(false);
   const [variantPrice, setVariantPrice] = useState(""); // OPTIONAL
   const [variantStock, setVariantStock] = useState("10");
-  const [variantImages, setVariantImages] = useState([]); // Array of strings (data URLs or URLs) - OPTIONAL (max 7)
+  const [variantImages, setVariantImages] = useState([]);
   const [isDragOver, setIsDragOver] = useState(false);
   const [modalValidationErr, setModalValidationErr] = useState("");
   const fileInputRef = useRef(null);
@@ -125,7 +98,10 @@ const SellerProductDetails = () => {
 
   // Quick Inline Stock State Tracking
   const [updatingStockIds, setUpdatingStockIds] = useState(new Set());
-  const [deleteConfirmId, setDeleteConfirmId] = useState(null);
+  const [stockDrafts, setStockDrafts] = useState({});
+  const [variantPriceDrafts, setVariantPriceDrafts] = useState({});
+  const [updatingPriceIds, setUpdatingPriceIds] = useState(new Set());
+  const [isAddingStandardSizes, setIsAddingStandardSizes] = useState(false);
   const [copiedId, setCopiedId] = useState(false);
 
   // Show Toast helper
@@ -146,25 +122,7 @@ const SellerProductDetails = () => {
     setIsSavingPrice(true);
     try {
       const updatedProduct = await handleUpdateProductPrice(productId, amount);
-      const updatedVariants = (product?.variants || []).map((variant) => {
-        const variantPrice = variant.price;
-        const inheritedPrice =
-          Number(variantPrice?.amount) === Number(product.price?.amount) &&
-          variantPrice?.currency === product.price?.currency;
-
-        return inheritedPrice
-          ? {
-              ...variant,
-              price: {
-                amount,
-                currency: product.price?.currency || "INR",
-              },
-            }
-          : variant;
-      });
-
-      persistLocalVariants(productId, updatedVariants);
-      setProduct({ ...updatedProduct, variants: updatedVariants });
+      setProduct(updatedProduct);
       setIsEditingPrice(false);
       showToast("Product price updated successfully.");
     } catch (error) {
@@ -177,25 +135,7 @@ const SellerProductDetails = () => {
     }
   };
 
-  // Synchronize variants state and save to local storage
-  const updateAndPersistVariants = useCallback(
-    (newVariants) => {
-      const sanitized = newVariants.map((v) => ({
-        ...v,
-        attributes: normalizeAttributes(v.attributes),
-      }));
-
-      setProduct((prev) => {
-        if (!prev) return prev;
-        const updated = { ...prev, variants: sanitized };
-        persistLocalVariants(productId, sanitized);
-        return updated;
-      });
-    },
-    [productId]
-  );
-
-  // Fetch product data & merge with local storage
+  // Product variants always come from the backend response.
   const loadProduct = useCallback(
     async (showLoading = true) => {
       if (!productId) {
@@ -212,14 +152,7 @@ const SellerProductDetails = () => {
         const resolvedProduct = data?.product || data;
 
         if (resolvedProduct && (resolvedProduct._id || resolvedProduct.title)) {
-          const localVariants = loadLocalVariants(productId);
-
-          const rawVariants =
-            localVariants !== null
-              ? localVariants
-              : resolvedProduct.variants || [];
-
-          const normalizedVariants = rawVariants.map((v) => ({
+          const normalizedVariants = (resolvedProduct.variants || []).map((v) => ({
             ...v,
             attributes: normalizeAttributes(v.attributes),
           }));
@@ -228,11 +161,6 @@ const SellerProductDetails = () => {
             ...resolvedProduct,
             variants: normalizedVariants,
           });
-
-          // Save to local storage if not already saved
-          if (localVariants === null && normalizedVariants.length > 0) {
-            persistLocalVariants(productId, normalizedVariants);
-          }
           setErrorMsg("");
         } else {
           setErrorMsg("Product could not be found or returned an invalid format.");
@@ -261,8 +189,14 @@ const SellerProductDetails = () => {
   );
 
   useEffect(() => {
-    loadProduct(true);
-  }, [productId]);
+    let isActive = true;
+    Promise.resolve().then(() => {
+      if (isActive) loadProduct(true);
+    });
+    return () => {
+      isActive = false;
+    };
+  }, [loadProduct]);
 
   // Statistics calculation
   const stats = useMemo(() => {
@@ -330,26 +264,84 @@ const SellerProductDetails = () => {
       });
   }, [product, searchQuery, stockFilter, sortBy]);
 
-  // Handle Single Stock Change (Saves locally)
-  const handleStockUpdate = (variantId, newStock) => {
-    const sanitizedStock = Math.max(0, parseInt(newStock, 10) || 0);
-
-    const currentVariants = product?.variants || [];
-    const updatedVariants = currentVariants.map((v) =>
-      v._id === variantId ? { ...v, stock: sanitizedStock } : v
-    );
-    updateAndPersistVariants(updatedVariants);
-    showToast("Stock quantity updated locally");
+  const applyServerProduct = (serverProduct) => {
+    setProduct({
+      ...serverProduct,
+      variants: (serverProduct.variants || []).map((variant) => ({
+        ...variant,
+        attributes: normalizeAttributes(variant.attributes),
+      })),
+    });
   };
 
-  // Convert File to Base64 Data URL for LocalStorage
-  const readFileAsDataUrl = (file) => {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(reader.result);
-      reader.onerror = reject;
-      reader.readAsDataURL(file);
-    });
+  const handleStockUpdate = async (variantId, newStock) => {
+    const stock = Number(newStock);
+    if (!Number.isInteger(stock) || stock < 0) {
+      showToast("Stock must be a non-negative whole number.", "error");
+      return;
+    }
+
+    setUpdatingStockIds((ids) => new Set(ids).add(variantId));
+    try {
+      const updatedProduct = await handleUpdateProductVariantStock(
+        productId,
+        variantId,
+        stock
+      );
+      applyServerProduct(updatedProduct);
+      setStockDrafts((drafts) => {
+        const next = { ...drafts };
+        delete next[variantId];
+        return next;
+      });
+      showToast("Variant stock saved.");
+    } catch (error) {
+      showToast(
+        error.response?.data?.message || error.message || "Could not update stock.",
+        "error"
+      );
+    } finally {
+      setUpdatingStockIds((ids) => {
+        const next = new Set(ids);
+        next.delete(variantId);
+        return next;
+      });
+    }
+  };
+
+  const handleVariantPriceUpdate = async (variant) => {
+    const amount = Number(variantPriceDrafts[variant._id] ?? variant.price?.amount);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      showToast("Variant price must be a positive number.", "error");
+      return;
+    }
+
+    setUpdatingPriceIds((ids) => new Set(ids).add(variant._id));
+    try {
+      const updatedProduct = await handleUpdateProductVariantPrice(
+        productId,
+        variant._id,
+        amount
+      );
+      applyServerProduct(updatedProduct);
+      setVariantPriceDrafts((drafts) => {
+        const next = { ...drafts };
+        delete next[variant._id];
+        return next;
+      });
+      showToast("Variant price saved.");
+    } catch (error) {
+      showToast(
+        error.response?.data?.message || error.message || "Could not update variant price.",
+        "error"
+      );
+    } finally {
+      setUpdatingPriceIds((ids) => {
+        const next = new Set(ids);
+        next.delete(variant._id);
+        return next;
+      });
+    }
   };
 
   // File drop / upload handling for variant images (up to 7 images)
@@ -365,31 +357,34 @@ const SellerProductDetails = () => {
     }
 
     const filesToProcess = fileList.slice(0, remainingSlots);
-
-    try {
-      const dataUrls = await Promise.all(filesToProcess.map(readFileAsDataUrl));
-      setVariantImages((prev) => [...prev, ...dataUrls]);
-    } catch (err) {
-      console.error("Error reading file", err);
-      setModalValidationErr("Failed to process one or more images.");
-    }
+    setVariantImages((prev) => [
+      ...prev,
+      ...filesToProcess.map((file) => ({
+        file,
+        url: URL.createObjectURL(file),
+      })),
+    ]);
   };
 
   const handleRemoveVariantImage = (index) => {
-    setVariantImages((prev) => prev.filter((_, i) => i !== index));
+    setVariantImages((prev) => {
+      const removed = prev[index];
+      if (removed?.file) URL.revokeObjectURL(removed.url);
+      return prev.filter((_, i) => i !== index);
+    });
   };
 
   const handleToggleProductImageSelection = (imgUrl) => {
     setVariantImages((prev) => {
-      if (prev.includes(imgUrl)) {
-        return prev.filter((u) => u !== imgUrl);
+      if (prev.some((image) => image.url === imgUrl)) {
+        return prev.filter((image) => image.url !== imgUrl);
       }
       if (prev.length >= MAX_VARIANT_IMAGES) {
         setModalValidationErr(`Cannot exceed ${MAX_VARIANT_IMAGES} images.`);
         return prev;
       }
       setModalValidationErr("");
-      return [...prev, imgUrl];
+      return [...prev, { url: imgUrl }];
     });
   };
 
@@ -475,58 +470,39 @@ const SellerProductDetails = () => {
         return;
       }
 
-      // 2. Price is OPTIONAL
-      let resolvedPrice;
-      if (variantPrice && !isNaN(Number(variantPrice)) && Number(variantPrice) >= 0) {
-        resolvedPrice = {
-          amount: Number(variantPrice),
+      const resolvedPriceAmount = variantPrice
+        ? Number(variantPrice)
+        : Number(product?.price?.amount);
+      if (!Number.isFinite(resolvedPriceAmount) || resolvedPriceAmount <= 0) {
+        setModalValidationErr("Enter a valid positive variant price.");
+        return;
+      }
+
+      const stock = Number(variantStock);
+      if (!Number.isInteger(stock) || stock < 0) {
+        setModalValidationErr("Stock must be a non-negative whole number.");
+        return;
+      }
+
+      const result = await handleAddVariant(productId, {
+        attributes: cleanAttributesObject,
+        price: {
+          amount: resolvedPriceAmount,
           currency: product?.price?.currency || "INR",
-        };
-      } else if (product?.price) {
-        resolvedPrice = {
-          amount: Number(product.price.amount) || 0,
-          currency: product.price.currency || "INR",
-        };
-      } else {
-        resolvedPrice = { amount: 0, currency: "INR" };
-      }
-
-      // 3. Images are OPTIONAL (up to 7 images)
-      const resolvedImages = variantImages.map((url) => ({ url }));
-
-      // 4. Construct Variant Record with attributes as pure Object
-      const newVariant = {
-        _id: `var_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`,
-        attributes: cleanAttributesObject, // STRICT PLAIN OBJECT
-        price: resolvedPrice,
-        stock: Math.max(0, parseInt(variantStock, 10) || 0),
-        images: resolvedImages,
-        createdAt: new Date().toISOString(),
-      };
-
-      // 5. Store State Locally
-      const currentList = product?.variants || [];
-      const updatedList = [...currentList, newVariant];
-      updateAndPersistVariants(updatedList);
-
-      showToast("Variant created and saved to local state");
-
-      // Optional background sync with backend API
-      try {
-        await handleAddVariant(productId, {
-          attributes: newVariant.attributes,
-          price: newVariant.price,
-          stock: newVariant.stock,
-          images: newVariant.images,
-        });
-      } catch (apiErr) {
-        console.info("Variant saved in local state (API sync optional):", apiErr.message);
-      }
+        },
+        stock,
+        images: variantImages,
+      });
+      applyServerProduct(result.product);
+      showToast("Variant created and saved.");
 
       // Reset modal state
       setIsAddModalOpen(false);
       setVariantPrice("");
       setVariantStock("10");
+      variantImages.forEach((image) => {
+        if (image.file) URL.revokeObjectURL(image.url);
+      });
       setVariantImages([]);
       setAttributes({
         Size: "32",
@@ -538,15 +514,6 @@ const SellerProductDetails = () => {
     } finally {
       setIsSubmittingVariant(false);
     }
-  };
-
-  // Handle Delete Variant (Saves locally)
-  const handleDeleteVariantAction = (variantId) => {
-    const currentList = product?.variants || [];
-    const updatedList = currentList.filter((v) => v._id !== variantId);
-    updateAndPersistVariants(updatedList);
-    setDeleteConfirmId(null);
-    showToast("Variant removed from local catalog");
   };
 
   // Quick Batch Size Matrix Generator
@@ -564,44 +531,31 @@ const SellerProductDetails = () => {
       return;
     }
 
-    const newVariants = sizesToAdd.map((size) => ({
-      _id: `var_quick_${size}_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
-      attributes: { Size: size, Color: defaultColor }, // OBJECT
-      price: {
-        amount: Number(product?.price?.amount || 0),
-        currency: product?.price?.currency || "INR",
-      },
-      stock: 15,
-      images: product?.images?.length > 0 ? [{ url: product.images[0].url }] : [],
-      createdAt: new Date().toISOString(),
-    }));
-
-    const currentList = product?.variants || [];
-    const updatedList = [...currentList, ...newVariants];
-    updateAndPersistVariants(updatedList);
-
-    showToast(`Generated ${sizesToAdd.length} size variants and stored locally`);
-
-    for (const v of newVariants) {
-      try {
-        await handleAddVariant(productId, {
-          attributes: v.attributes,
-          price: v.price,
-          stock: v.stock,
-          images: v.images,
-        });
-      } catch (e) {
-        // silently handled
-      }
+    const price = Number(product?.price?.amount);
+    if (!Number.isFinite(price) || price <= 0) {
+      showToast("Set a valid product price before generating variants.", "error");
+      return;
     }
-  };
 
-  // Clear all local variants helper
-  const handleResetToBackend = () => {
-    if (window.confirm("Reset all variants to default server state? This will clear local changes.")) {
-      localStorage.removeItem(getLocalVariantsKey(productId));
-      loadProduct(true);
-      showToast("Reset to server state");
+    setIsAddingStandardSizes(true);
+    try {
+      for (const size of sizesToAdd) {
+        const result = await handleAddVariant(productId, {
+          attributes: { Size: size, Color: defaultColor },
+          price: { amount: price, currency: product?.price?.currency || "INR" },
+          stock: 15,
+        });
+        applyServerProduct(result.product);
+      }
+      showToast(`Added ${sizesToAdd.length} variants to the product.`);
+    } catch (error) {
+      await loadProduct(false);
+      showToast(
+        error.response?.data?.message || error.message || "Could not add all standard variants.",
+        "error"
+      );
+    } finally {
+      setIsAddingStandardSizes(false);
     }
   };
 
@@ -765,15 +719,6 @@ const SellerProductDetails = () => {
                 <span>Sync</span>
               </button>
 
-              <button
-                type="button"
-                onClick={handleResetToBackend}
-                className="hidden lg:flex items-center px-3 py-2 text-[10px] uppercase tracking-[0.18em] font-medium border border-[#ede9e3] bg-white text-[#7A6E63] hover:text-red-700 hover:border-red-300 transition-all"
-                title="Clear local overrides and load from server"
-              >
-                Reset State
-              </button>
-
               <Link
                 to={`/products/${product._id}`}
                 target="_blank"
@@ -909,7 +854,7 @@ const SellerProductDetails = () => {
                           {product.price?.currency || "INR"}{" "}
                           {Number(product.price?.amount || 0).toLocaleString()}
                         </span>
-                        {!isEditingPrice && (
+                        {!isEditingPrice && product.variants?.length === 0 && (
                           <button
                             type="button"
                             onClick={() => {
@@ -920,6 +865,11 @@ const SellerProductDetails = () => {
                           >
                             Edit Price
                           </button>
+                        )}
+                        {product.variants?.length > 0 && (
+                          <span className="text-[9px] text-[#7A6E63]">
+                            Edit individual variant prices below
+                          </span>
                         )}
                       </div>
                       {isEditingPrice && (
@@ -970,11 +920,11 @@ const SellerProductDetails = () => {
 
                   <div className="text-[10px] text-[#7A6E63] uppercase tracking-[0.15em]">
                     Created:{" "}
-                    {new Date(product.createdAt || Date.now()).toLocaleDateString("en-US", {
+                    {product.createdAt ? new Date(product.createdAt).toLocaleDateString("en-US", {
                       month: "short",
                       day: "numeric",
                       year: "numeric",
-                    })}
+                    }) : "Recently"}
                   </div>
                 </div>
               </div>
@@ -1051,7 +1001,7 @@ const SellerProductDetails = () => {
                   Product Variants & Stock Inventory
                 </h3>
                 <p className="text-xs text-[#7A6E63] mt-0.5">
-                  Attributes are stored as an object (e.g. <code>&#123; Size: "30", Color: "Blue" &#125;</code>). Price and images are optional.
+                  Variant attributes, prices, and stock are saved to the product in MongoDB.
                 </p>
               </div>
 
@@ -1062,7 +1012,7 @@ const SellerProductDetails = () => {
                     onClick={handleGenerateStandardSizes}
                     className="px-3.5 py-2 text-[10px] uppercase tracking-[0.18em] font-medium border border-[#C9A96E] text-[#1b1c1a] bg-[#C9A96E]/10 hover:bg-[#C9A96E] hover:text-[#1b1c1a] transition-all"
                   >
-                    + Generate Standard Sizes (S, M, L, XL)
+                    {isAddingStandardSizes ? "Saving variants..." : "+ Generate Standard Sizes (S, M, L, XL)"}
                   </button>
                 )}
 
@@ -1199,7 +1149,7 @@ const SellerProductDetails = () => {
                 <p className="text-xs text-[#7A6E63] max-w-md mx-auto mb-6">
                   {searchQuery || stockFilter !== "all"
                     ? "Try adjusting your filter settings or search terms."
-                    : "Product variants allow you to configure sizes, colors, and stock quantities for this piece. Stored securely in your browser session & locally."}
+                    : "Add variants here to store their attributes, prices, and stock on the product in MongoDB."}
                 </p>
                 <div className="flex flex-wrap justify-center gap-3">
                   <button
@@ -1231,13 +1181,13 @@ const SellerProductDetails = () => {
                       <th className="py-4 px-6">Price</th>
                       <th className="py-4 px-6 text-center">Status</th>
                       <th className="py-4 px-6">Stock Level & Quick Adjust</th>
-                      <th className="py-4 px-6 text-right">Actions</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-[#ede9e3] text-sm">
                     {filteredVariants.map((variant) => {
                       const stockNum = Number(variant.stock) || 0;
                       const isUpdating = updatingStockIds.has(variant._id);
+                      const isUpdatingPrice = updatingPriceIds.has(variant._id);
                       const varImgs = Array.isArray(variant.images) ? variant.images : [];
                       const primaryImg = varImgs[0]?.url || product.images?.[0]?.url || "";
                       const attrsObj = normalizeAttributes(variant.attributes);
@@ -1326,9 +1276,30 @@ const SellerProductDetails = () => {
                                   : product.price?.amount
                               ).toLocaleString()}
                             </div>
-                            <span className="text-[9px] text-[#7A6E63]">
-                              {variant.price?.amount !== undefined ? "Custom Variant Price" : "Base Product Price"}
-                            </span>
+                            <div className="mt-2 flex items-center gap-1">
+                              <input
+                                aria-label={`Price for variant ${variant._id}`}
+                                type="number"
+                                min="0.01"
+                                step="0.01"
+                                value={variantPriceDrafts[variant._id] ?? String(variant.price?.amount ?? product.price?.amount ?? "")}
+                                onChange={(event) =>
+                                  setVariantPriceDrafts((drafts) => ({
+                                    ...drafts,
+                                    [variant._id]: event.target.value,
+                                  }))
+                                }
+                                className="w-24 border border-[#ede9e3] bg-white px-2 py-1 text-xs"
+                              />
+                              <button
+                                type="button"
+                                disabled={isUpdatingPrice}
+                                onClick={() => handleVariantPriceUpdate(variant)}
+                                className="border border-[#ede9e3] px-2 py-1 text-[9px] uppercase tracking-wider disabled:opacity-50"
+                              >
+                                {isUpdatingPrice ? "Saving" : "Save"}
+                              </button>
+                            </div>
                           </td>
 
                           {/* Stock Status Badge */}
@@ -1369,12 +1340,28 @@ const SellerProductDetails = () => {
                               <input
                                 type="number"
                                 min="0"
-                                value={stockNum}
+                                value={stockDrafts[variant._id] ?? stockNum}
                                 onChange={(e) =>
-                                  handleStockUpdate(variant._id, e.target.value)
+                                  setStockDrafts((drafts) => ({
+                                    ...drafts,
+                                    [variant._id]: e.target.value,
+                                  }))
                                 }
                                 className="w-16 py-1 text-center font-mono text-xs border border-[#ede9e3] bg-white focus:border-[#1b1c1a] focus:outline-none"
                               />
+                              <button
+                                type="button"
+                                disabled={isUpdating}
+                                onClick={() =>
+                                  handleStockUpdate(
+                                    variant._id,
+                                    stockDrafts[variant._id] ?? stockNum
+                                  )
+                                }
+                                className="px-2 py-1 text-[9px] uppercase tracking-wider border border-[#ede9e3] disabled:opacity-50"
+                              >
+                                {isUpdating ? "Saving" : "Save"}
+                              </button>
 
                               <button
                                 type="button"
@@ -1425,50 +1412,6 @@ const SellerProductDetails = () => {
                             </div>
                           </td>
 
-                          {/* Actions */}
-                          <td className="py-4 px-6 text-right">
-                            {deleteConfirmId === variant._id ? (
-                              <div className="flex items-center justify-end gap-2">
-                                <button
-                                  type="button"
-                                  onClick={() =>
-                                    handleDeleteVariantAction(variant._id)
-                                  }
-                                  className="px-2.5 py-1 text-[9px] uppercase tracking-wider bg-red-700 text-white font-medium hover:bg-red-800 transition-colors"
-                                >
-                                  Confirm
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => setDeleteConfirmId(null)}
-                                  className="px-2 py-1 text-[9px] uppercase tracking-wider border border-[#ede9e3] text-[#7A6E63] hover:text-[#1b1c1a]"
-                                >
-                                  Cancel
-                                </button>
-                              </div>
-                            ) : (
-                              <button
-                                type="button"
-                                onClick={() => setDeleteConfirmId(variant._id)}
-                                className="p-1.5 text-[#B5ADA3] hover:text-red-700 hover:bg-red-50 transition-colors"
-                                title="Remove Variant"
-                              >
-                                <svg
-                                  className="w-4 h-4"
-                                  fill="none"
-                                  stroke="currentColor"
-                                  viewBox="0 0 24 24"
-                                >
-                                  <path
-                                    strokeLinecap="round"
-                                    strokeLinejoin="round"
-                                    strokeWidth="1.6"
-                                    d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
-                                  />
-                                </svg>
-                              </button>
-                            )}
-                          </td>
                         </tr>
                       );
                     })}
@@ -1718,7 +1661,7 @@ const SellerProductDetails = () => {
                         Click or drag images to upload
                       </p>
                       <p className="text-[9px] text-[#7A6E63] mt-0.5">
-                        PNG, JPG, WebP up to 7 images. Stored locally.
+                        PNG, JPG, WebP up to 7 images. Saved with the variant.
                       </p>
                     </div>
                   )}
@@ -1729,13 +1672,13 @@ const SellerProductDetails = () => {
                         Staged Variant Images ({variantImages.length}/{MAX_VARIANT_IMAGES}):
                       </span>
                       <div className="flex flex-wrap gap-2">
-                        {variantImages.map((imgUrl, i) => (
+                        {variantImages.map((image, i) => (
                           <div
                             key={i}
                             className="w-16 h-20 border border-[#ede9e3] relative overflow-hidden group/thumb bg-[#f5f3f0]"
                           >
                             <img
-                              src={imgUrl}
+                              src={image.url}
                               alt={`Variant ${i + 1}`}
                               className="w-full h-full object-cover"
                             />
@@ -1763,7 +1706,7 @@ const SellerProductDetails = () => {
                       </span>
                       <div className="flex flex-wrap gap-2">
                         {imagesList.map((img, idx) => {
-                          const isSelected = variantImages.includes(img.url);
+                          const isSelected = variantImages.some((image) => image.url === img.url);
                           return (
                             <button
                               key={idx}

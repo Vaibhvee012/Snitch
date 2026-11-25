@@ -1,8 +1,12 @@
 
 import mongoose from "mongoose";
 import ProductModel from "./models/product.model.js";
-import cartModel from "./models/cart.model.js";
 import { uploadFile } from "../services/storage.service.js";
+
+const isNumericInput = value =>
+    (typeof value === "number" ||
+        (typeof value === "string" && value.trim() !== "")) &&
+    Number.isFinite(Number(value));
 
 // Create a new product
 export async function createProduct(req, res) {
@@ -45,13 +49,27 @@ export async function createProduct(req, res) {
                     typeof attributes !== "object" ||
                     Array.isArray(attributes) ||
                     Object.keys(attributes).length === 0 ||
-                    !Number.isFinite(Number(price?.amount)) ||
+                    !isNumericInput(price?.amount) ||
                     Number(price.amount) <= 0 ||
+                    !isNumericInput(variant?.stock) ||
                     !Number.isInteger(stock) ||
                     stock < 0
                 ) {
                     return res.status(400).json({
                         message: "Each variant must include attributes, a valid price, and non-negative stock",
+                        success: false,
+                    });
+                }
+
+                if (
+                    Object.entries(attributes).some(([key, value]) =>
+                        !key.trim() ||
+                        (typeof value !== "string" && typeof value !== "number") ||
+                        !String(value).trim()
+                    )
+                ) {
+                    return res.status(400).json({
+                        message: "Variant attribute names and values cannot be empty",
                         success: false,
                     });
                 }
@@ -224,8 +242,7 @@ export async function updateProductPrice(req, res) {
 
         if (
             req.body?.amount === undefined ||
-            req.body.amount === "" ||
-            !Number.isFinite(amount) ||
+            !isNumericInput(req.body.amount) ||
             amount <= 0
         ) {
             return res.status(400).json({
@@ -246,57 +263,18 @@ export async function updateProductPrice(req, res) {
             });
         }
 
-        const previousPrice = {
-            amount: Number(product.price.amount),
+        if (product.variants.length > 0) {
+            return res.status(400).json({
+                message: "Products with variants must update the price on a specific variant",
+                success: false,
+            });
+        }
+
+        product.price = {
+            amount,
             currency: product.price.currency,
         };
-        const updatedPrice = {
-            amount,
-            currency: previousPrice.currency,
-        };
-
-        product.variants.forEach(variant => {
-            if (
-                Number(variant.price?.amount) === previousPrice.amount &&
-                variant.price?.currency === previousPrice.currency
-            ) {
-                variant.price = updatedPrice;
-            }
-        });
-        product.price = updatedPrice;
         await product.save();
-
-        const carts = await cartModel.find({ "items.product": product._id });
-        const cartUpdates = [];
-        for (const cart of carts) {
-            let cartChanged = false;
-
-            for (const item of cart.items) {
-                if (item.product.toString() !== product._id.toString()) continue;
-
-                const variant = product.variants.find(
-                    productVariant => productVariant._id.toString() === item.variant.toString()
-                );
-                if (!variant) continue;
-
-                if (!item.priceAtAddition) {
-                    item.priceAtAddition = item.price || previousPrice;
-                    cartChanged = true;
-                }
-
-                const currentPrice = variant.price || product.price;
-                if (
-                    Number(item.price?.amount) !== Number(currentPrice.amount) ||
-                    item.price?.currency !== currentPrice.currency
-                ) {
-                    item.price = currentPrice;
-                    cartChanged = true;
-                }
-            }
-
-            if (cartChanged) cartUpdates.push(cart.save());
-        }
-        await Promise.all(cartUpdates);
 
         return res.status(200).json({
             message: "Product price updated successfully",
@@ -308,6 +286,154 @@ export async function updateProductPrice(req, res) {
 
         return res.status(500).json({
             message: error.message,
+            success: false,
+        });
+    }
+}
+
+export async function updateProductVariantStock(req, res) {
+    try {
+        const { productId, variantId } = req.params;
+        const rawStock = req.body?.stock;
+        const stock = Number(rawStock);
+
+        if (
+            !mongoose.Types.ObjectId.isValid(productId) ||
+            !mongoose.Types.ObjectId.isValid(variantId)
+        ) {
+            return res.status(400).json({
+                message: "Invalid product or variant ID",
+                success: false,
+            });
+        }
+
+        if (
+            rawStock === undefined ||
+            rawStock === null ||
+            !isNumericInput(rawStock) ||
+            !Number.isInteger(stock) ||
+            stock < 0
+        ) {
+            return res.status(400).json({
+                message: "Stock must be a non-negative whole number",
+                success: false,
+            });
+        }
+
+        const updatedProduct = await ProductModel.findOneAndUpdate(
+            {
+                _id: productId,
+                seller: req.user._id,
+                "variants._id": variantId,
+            },
+            { $set: { "variants.$.stock": stock } },
+            { new: true, runValidators: true }
+        );
+
+        if (!updatedProduct) {
+            const ownedProduct = await ProductModel.exists({
+                _id: productId,
+                seller: req.user._id,
+            });
+            return res.status(404).json({
+                message: ownedProduct ? "Variant not found" : "Product not found",
+                success: false,
+            });
+        }
+
+        const variant = updatedProduct.variants.id(variantId);
+        return res.status(200).json({
+            message: "Variant stock updated successfully",
+            success: true,
+            product: updatedProduct,
+            variant,
+        });
+    } catch (error) {
+        console.error("Update variant stock error:", error);
+        return res.status(500).json({
+            message: "Unable to update variant stock",
+            success: false,
+        });
+    }
+}
+
+export async function updateProductVariantPrice(req, res) {
+    try {
+        const { productId, variantId } = req.params;
+        const amount = Number(req.body?.amount);
+
+        if (
+            !mongoose.Types.ObjectId.isValid(productId) ||
+            !mongoose.Types.ObjectId.isValid(variantId)
+        ) {
+            return res.status(400).json({
+                message: "Invalid product or variant ID",
+                success: false,
+            });
+        }
+
+        if (
+            req.body?.amount === undefined ||
+            !isNumericInput(req.body.amount) ||
+            amount <= 0
+        ) {
+            return res.status(400).json({
+                message: "Variant price must be a positive number",
+                success: false,
+            });
+        }
+
+        const product = await ProductModel.findOne({
+            _id: productId,
+            seller: req.user._id,
+            "variants._id": variantId,
+        });
+        if (!product) {
+            const ownedProduct = await ProductModel.exists({
+                _id: productId,
+                seller: req.user._id,
+            });
+            return res.status(404).json({
+                message: ownedProduct ? "Variant not found" : "Product not found",
+                success: false,
+            });
+        }
+
+        const variant = product.variants.id(variantId);
+        const updatedProduct = await ProductModel.findOneAndUpdate(
+            {
+                _id: productId,
+                seller: req.user._id,
+                "variants._id": variantId,
+            },
+            {
+                $set: {
+                    "variants.$.price": {
+                        amount,
+                        currency: variant.price?.currency || product.price.currency,
+                    },
+                },
+            },
+            { new: true, runValidators: true }
+        );
+
+        if (!updatedProduct) {
+            return res.status(409).json({
+                message: "Product changed while the price was being updated. Refresh and retry.",
+                success: false,
+            });
+        }
+
+        return res.status(200).json({
+            message: "Variant price updated successfully",
+            success: true,
+            product: updatedProduct,
+            variant: updatedProduct.variants.id(variantId),
+        });
+    } catch (error) {
+        console.error("Update variant price error:", error);
+        return res.status(500).json({
+            message: "Unable to update variant price",
             success: false,
         });
     }
@@ -339,25 +465,13 @@ export async function addProductVariant(req, res) {
             });
         }
 
-        // Handle variant images
-        const files = req.files || [];
-
-        const images = await Promise.all(
-            files.map(async (file) => {
-                return await uploadFile({
-                    buffer: file.buffer,
-                    fileName: file.originalname,
-                });
-            })
-        );
-
         // Validate variant price and stock
         const price = Number(req.body.priceAmount);
         const stock = Number(req.body.stock);
 
         if (
             req.body.priceAmount === undefined ||
-            !Number.isFinite(price) ||
+            !isNumericInput(req.body.priceAmount) ||
             price <= 0
         ) {
             return res.status(400).json({
@@ -368,6 +482,7 @@ export async function addProductVariant(req, res) {
 
         if (
             req.body.stock === undefined ||
+            !isNumericInput(req.body.stock) ||
             !Number.isInteger(stock) ||
             stock < 0
         ) {
@@ -392,16 +507,104 @@ export async function addProductVariant(req, res) {
         if (
             !attributes ||
             typeof attributes !== "object" ||
-            Array.isArray(attributes)
+            Array.isArray(attributes) ||
+            Object.keys(attributes).length === 0
         ) {
             return res.status(400).json({
-                message: "Variant attributes must be an object",
+                message: "Variant attributes must be a non-empty object",
                 success: false,
             });
         }
 
-        // Save variant
-        product.variants.push({
+        const normalizedAttributes = Object.entries(attributes)
+            .map(([key, value]) => [
+                String(key).trim().toLocaleLowerCase(),
+                String(value).trim().toLocaleLowerCase(),
+            ])
+            .sort(([keyA], [keyB]) => keyA.localeCompare(keyB));
+
+        if (
+            Object.entries(attributes).some(([key, value]) =>
+                !key.trim() ||
+                (typeof value !== "string" && typeof value !== "number") ||
+                !String(value).trim()
+            ) ||
+            normalizedAttributes.some(([key, value]) => !key || !value)
+        ) {
+            return res.status(400).json({
+                message: "Variant attribute names and values cannot be empty",
+                success: false,
+            });
+        }
+
+        const variantKey = JSON.stringify(normalizedAttributes);
+        const duplicate = product.variants.some(variant => {
+            const existingKey = JSON.stringify(
+                (variant.attributes instanceof Map
+                    ? Array.from(variant.attributes)
+                    : Object.entries(variant.attributes || {}))
+                    .map(([key, value]) => [
+                        key.trim().toLocaleLowerCase(),
+                        String(value).trim().toLocaleLowerCase(),
+                    ])
+                    .sort(([keyA], [keyB]) => keyA.localeCompare(keyB))
+            );
+            return existingKey === variantKey;
+        });
+        if (duplicate) {
+            return res.status(409).json({
+                message: "A variant with these attributes already exists",
+                success: false,
+            });
+        }
+
+        let imageUrls = [];
+        if (req.body.imageUrls !== undefined) {
+            try {
+                imageUrls = JSON.parse(req.body.imageUrls);
+            } catch {
+                return res.status(400).json({
+                    message: "Variant image URLs must be valid JSON",
+                    success: false,
+                });
+            }
+        }
+        if (
+            !Array.isArray(imageUrls) ||
+            imageUrls.some(url => {
+                if (typeof url !== "string") return true;
+                try {
+                    return !["http:", "https:"].includes(new URL(url).protocol);
+                } catch {
+                    return true;
+                }
+            })
+        ) {
+            return res.status(400).json({
+                message: "Variant image URLs must be valid HTTP or HTTPS URLs",
+                success: false,
+            });
+        }
+
+        const files = req.files || [];
+        if (imageUrls.length + files.length > 7) {
+            return res.status(400).json({
+                message: "A variant can have at most 7 images",
+                success: false,
+            });
+        }
+        const uploadedImages = await Promise.all(
+            files.map(file => uploadFile({
+                buffer: file.buffer,
+                fileName: file.originalname,
+            }))
+        );
+        const images = [
+            ...uploadedImages,
+            ...imageUrls.map(url => ({ url })),
+        ];
+
+        const newVariant = {
             images,
             price: {
                 amount: price,
@@ -409,14 +612,40 @@ export async function addProductVariant(req, res) {
             },
             stock,
             attributes,
-        });
+        };
 
-        await product.save();
+        const versionFilter = product.__v === undefined
+            ? { __v: { $exists: false } }
+            : { __v: product.__v };
+        const updateResult = await ProductModel.updateOne(
+            {
+                _id: productId,
+                seller: req.user._id,
+                ...versionFilter,
+            },
+            {
+                $push: { variants: newVariant },
+                $inc: { __v: 1 },
+            },
+            { runValidators: true }
+        );
+
+        if (updateResult.modifiedCount !== 1) {
+            return res.status(409).json({
+                message: "Product changed while the variant was being added. Refresh and retry.",
+                success: false,
+            });
+        }
+
+        const updatedProduct = await ProductModel.findOne({
+            _id: productId,
+            seller: req.user._id,
+        });
 
         return res.status(201).json({
             message: "Product variant added successfully",
             success: true,
-            product,
+            product: updatedProduct,
         });
 
     } catch (error) {

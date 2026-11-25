@@ -53,6 +53,11 @@ const productSchema = new mongoose.Schema(
                 stock: {
                     type: Number,
                     default: 0,
+                    min: 0,
+                    validate: {
+                        validator: Number.isInteger,
+                        message: "Variant stock must be a whole number",
+                    },
                 },
 
                 attributes: {

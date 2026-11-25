@@ -5,6 +5,8 @@ function validateRequest(req, res, next) {
 
     if (!errors.isEmpty()) {
         return res.status(400).json({
+            success: false,
+            message: "Validation error",
             errors: errors.array()
         });
     }
@@ -14,16 +16,20 @@ function validateRequest(req, res, next) {
 
 export const validateRegisterUser = [
     body("email")
+        .trim()
+        .toLowerCase()
         .isEmail()
         .withMessage("Invalid email format"),
 
     body("contact")
+        .trim()
         .notEmpty()
         .withMessage("Contact information is required")
         .matches(/^\d{10}$/)
         .withMessage("Contact must be a 10-digit number"),
 
     body("fullname")
+        .trim()
         .notEmpty()
         .withMessage("Full name is required")
         .isLength({ min: 3 })

@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import { useState } from "react";
 import { useAuth } from "../hook/useAuth";
 import { useNavigate } from "react-router-dom";
 import ContinueWithGoogle from "../components/continueWithGoogle.jsx";
@@ -14,6 +14,7 @@ const Register = () => {
     password: "",
     isSeller: false,
   });
+  const [errorMessage, setErrorMessage] = useState("");
 
   const handleChange = (e) => {
     const { name, value, type, checked } = e.target;
@@ -26,16 +27,29 @@ const Register = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    setErrorMessage("");
 
-    await handleRegister({
-      email: formData.email,
-      contact: formData.contactNumber,
-      password: formData.password,
-      isSeller: formData.isSeller,
-      fullname: formData.fullName,
-    });
+    try {
+      await handleRegister({
+        email: formData.email,
+        contact: formData.contactNumber,
+        password: formData.password,
+        isSeller: formData.isSeller,
+        fullname: formData.fullName,
+      });
 
-    navigate("/");
+      navigate("/");
+    } catch (error) {
+      const validationMessage = error.response?.data?.errors
+        ?.map((item) => item.msg)
+        .filter(Boolean)
+        .join(", ");
+      setErrorMessage(
+        validationMessage ||
+          error.response?.data?.message ||
+          "Registration failed. Please try again."
+      );
+    }
   };
 
   const inputStyle = {
@@ -319,6 +333,11 @@ const Register = () => {
               </label>
 
               {/* Sign Up Button */}
+              {errorMessage && (
+                <p role="alert" className="-mb-5 text-sm text-red-700">
+                  {errorMessage}
+                </p>
+              )}
               <button
                 type="submit"
                 className="w-full py-4 text-[11px] uppercase tracking-[0.25em] font-medium transition-all duration-300 mt-2"

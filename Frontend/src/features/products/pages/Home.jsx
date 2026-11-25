@@ -3,6 +3,7 @@ import { useEffect } from "react";
 import { useSelector } from "react-redux";
 import { useNavigate } from "react-router-dom";
 import { useProduct } from "../hooks/useProduct";
+import { formatProductPriceRange } from "../utils/productPrice";
 
 const Home = () => {
   const products = useSelector((state) => state.product.products);
@@ -110,8 +111,7 @@ const Home = () => {
                           className="text-[10px] uppercase tracking-[0.2em] font-medium"
                           style={{ color: "#1b1c1a" }}
                         >
-                          {product.price?.currency}{" "}
-                          {product.price?.amount?.toLocaleString()}
+                          {formatProductPriceRange(product)}
                         </span>
                       </div>
                     </div>

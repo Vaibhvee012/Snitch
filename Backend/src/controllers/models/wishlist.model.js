@@ -1,3 +1,4 @@
+
 import mongoose from "mongoose";
 
 const wishlistSchema = new mongoose.Schema(
@@ -6,8 +7,8 @@ const wishlistSchema = new mongoose.Schema(
             type: mongoose.Schema.Types.ObjectId,
             ref: "User",
             required: true,
-            unique: true,
         },
+
         products: [
             {
                 type: mongoose.Schema.Types.ObjectId,
@@ -20,8 +21,9 @@ const wishlistSchema = new mongoose.Schema(
     }
 );
 
+// Ensure each user has only one wishlist
 wishlistSchema.index({ user: 1 }, { unique: true });
 
-const wishlistModel = mongoose.model("Wishlist", wishlistSchema);
+const Wishlist = mongoose.model("Wishlist", wishlistSchema);
 
-export default wishlistModel;
+export default Wishlist;
