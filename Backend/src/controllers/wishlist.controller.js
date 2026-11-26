@@ -1,6 +1,6 @@
 import mongoose from "mongoose";
-import wishlistModel from "./models/wishlist.model.js";
-import productModel from "./models/product.model.js";
+import wishlistModel from "../models/wishlist.model.js";
+import productModel from "../models/product.model.js";
 
 const getWishlist = async (userId) => {
     let wishlist = await wishlistModel.findOne({ user: userId });

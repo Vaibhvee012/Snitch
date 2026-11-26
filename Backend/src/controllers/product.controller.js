@@ -1,6 +1,6 @@
 
 import mongoose from "mongoose";
-import ProductModel from "./models/product.model.js";
+import ProductModel from "../models/product.model.js";
 import { uploadFile } from "../services/storage.service.js";
 
 const isNumericInput = value =>

@@ -1,7 +1,7 @@
 
 import mongoose from "mongoose";
 import { config } from "./config.js";
-import UserModel from "../controllers/models/user.model.js";
+import UserModel from "../models/user.model.js";
 
 async function connectDB() {
     await mongoose.connect(config.MONGO_URI);

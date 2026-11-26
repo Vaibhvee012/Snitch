@@ -36,4 +36,15 @@ router.get("/", authenticateUser, getCart);
 router.put("/:itemId", authenticateUser, validateUpdateCartItemQuantity, updateCartItemQuantity);
 router.delete("/:itemId", authenticateUser, validateRemoveCartItem, removeCartItem);
 
+
+/**
+ * @route POST /api/cart/payment/create/order
+ * @desc Create a payment order using Razorpay
+ * @access Private
+ * @argument amount - The amount for the order (in INR)
+ * @argument currency - The currency for the order (default is INR)
+ */
+
+router.post("/payment/create/order", authenticateUser)
+
 export default router;
