@@ -465,6 +465,7 @@ export async function updateProductVariant(req, res) {
         }
 
         const variant = product.variants.id(variantId);
+        const updates = {};
         const hasAttributes = req.body.attributes !== undefined;
         const hasPrice = req.body.priceAmount !== undefined;
         const hasStock = req.body.stock !== undefined;
@@ -527,7 +528,7 @@ export async function updateProductVariant(req, res) {
                     success: false,
                 });
             }
-            variant.attributes = attributes;
+            updates["variants.$.attributes"] = attributes;
         }
 
         if (hasPrice) {
@@ -538,9 +539,9 @@ export async function updateProductVariant(req, res) {
                     success: false,
                 });
             }
-            variant.price = {
+            updates["variants.$.price"] = {
                 amount,
-                currency: req.body.priceCurrency || variant.price.currency,
+                currency: req.body.priceCurrency || variant.price?.currency || product.price.currency,
             };
         }
 
@@ -552,7 +553,7 @@ export async function updateProductVariant(req, res) {
                     success: false,
                 });
             }
-            variant.stock = stock;
+            updates["variants.$.stock"] = stock;
         }
 
         if (hasImages) {
@@ -589,18 +590,32 @@ export async function updateProductVariant(req, res) {
                     uploadFile({ buffer: file.buffer, fileName: file.originalname })
                 )
             );
-            variant.images = [
+            updates["variants.$.images"] = [
                 ...uploadedImages,
                 ...imageUrls.map(url => ({ url })),
             ];
         }
 
-        await product.save();
+        const updatedProduct = await ProductModel.findOneAndUpdate(
+            {
+                _id: productId,
+                seller: req.user._id,
+                "variants._id": variantId,
+            },
+            { $set: updates },
+            { new: true, runValidators: true }
+        );
+        if (!updatedProduct) {
+            return res.status(409).json({
+                message: "Variant changed or was removed while you were editing. Refresh and retry.",
+                success: false,
+            });
+        }
         return res.status(200).json({
             message: "Product variant updated successfully",
             success: true,
-            product,
-            variant: product.variants.id(variantId),
+            product: updatedProduct,
+            variant: updatedProduct.variants.id(variantId),
         });
     } catch (error) {
         console.error("Update product variant error:", error);

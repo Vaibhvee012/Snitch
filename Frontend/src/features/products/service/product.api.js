@@ -51,6 +51,37 @@ export async function updateProductVariantPrice(productId, variantId, amount) {
     return response.data;
 }
 
+export async function updateProductVariant(productId, variantId, variant) {
+    const formData = new FormData();
+    formData.append("attributes", JSON.stringify(variant.attributes));
+    formData.append("priceAmount", String(variant.price.amount));
+    formData.append("priceCurrency", variant.price.currency);
+    formData.append("stock", String(variant.stock));
+
+    const imageUrls = [];
+    (variant.images || []).forEach(image => {
+        if (image?.file instanceof File) {
+            formData.append("images", image.file);
+        } else if (typeof image?.url === "string" && image.url) {
+            imageUrls.push(image.url);
+        }
+    });
+    formData.append("imageUrls", JSON.stringify(imageUrls));
+
+    const response = await productApiInstance.patch(
+        `/${productId}/variants/${variantId}`,
+        formData
+    );
+    return response.data;
+}
+
+export async function deleteProductVariant(productId, variantId) {
+    const response = await productApiInstance.delete(
+        `/${productId}/variants/${variantId}`
+    );
+    return response.data;
+}
+
 // Add a variant to an existing product
 export async function addProductVariant(productId, newProductVariant) {
     const formData = new FormData();

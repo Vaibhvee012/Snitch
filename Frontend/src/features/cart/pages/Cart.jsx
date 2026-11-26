@@ -26,6 +26,8 @@ const Cart = () => {
     const {
         handleGetCart,
         handleIncrementCartItem,
+        handleDecrementCartItem,
+        handleRemoveCartItem,
         handleCreateCartOrder,
         handleVerifyCartOrder
     } = useCart()
@@ -34,18 +36,33 @@ const Cart = () => {
     const { Razorpay } = useRazorpay()
     const user = useSelector(state => state.user)
 
-    /* Local quantity state — key: cartItem._id, value: number */
-    const [quantities, setQuantities] = useState({})
+    const [cartActionError, setCartActionError] = useState('')
+    const [updatingItemIds, setUpdatingItemIds] = useState([])
 
     useEffect(() => {
         handleGetCart()
     }, [handleGetCart])
 
-    const changeQty = (id, delta) => {
-        setQuantities(prev => ({
-            ...prev,
-            [id]: Math.max(1, (prev[id] ?? 1) + delta),
-        }))
+    const updateQuantity = async (item, direction) => {
+        setCartActionError('')
+        setUpdatingItemIds(ids => [...ids, item._id])
+        try {
+            const update = direction > 0 ? handleIncrementCartItem : handleDecrementCartItem
+            await update({ itemId: item._id, currentQty: item.quantity })
+        } catch (error) {
+            setCartActionError(error.response?.data?.message || 'Unable to update cart quantity.')
+        } finally {
+            setUpdatingItemIds(ids => ids.filter(id => id !== item._id))
+        }
+    }
+
+    const removeItem = async itemId => {
+        setCartActionError('')
+        try {
+            await handleRemoveCartItem(itemId)
+        } catch (error) {
+            setCartActionError(error.response?.data?.message || 'Unable to remove this item.')
+        }
     }
 
     /* ─── Helpers ─── */
@@ -75,8 +92,21 @@ const Cart = () => {
         return null
     }
 
-    const formatCurrency = (amount, currency = 'INR') =>
+    const formatCurrency = (amount, currency = cart.currency || 'INR') =>
         `${currency} ${Number(amount || 0).toLocaleString('en-IN')}`
+    const formatPriceDifference = (amount, currency) =>
+        currency === 'INR'
+            ? `₹${Number(amount).toLocaleString('en-IN')}`
+            : `${currency} ${Number(amount).toLocaleString('en-IN')}`
+
+    const canCheckout = cart.items.every(item => {
+        const variant = getVariantDetails(item.product, item.variant)
+        const price = Number(item.price?.amount)
+        return variant &&
+            Number(variant.stock) >= Number(item.quantity) &&
+            Number.isFinite(price) &&
+            price > 0
+    })
 
     async function handleCheckout() {
         try {
@@ -236,7 +266,7 @@ const Cart = () => {
                                     className="text-[10px] uppercase tracking-[0.24em] font-medium"
                                     style={{ color: tokens.muted }}
                                 >
-                                    {cart?.items?.length} {cart?.items?.length === 1 ? 'piece' : 'pieces'}
+                                    {cart?.totalQuantity ?? cart?.items?.length} {(cart?.totalQuantity ?? cart?.items?.length) === 1 ? 'piece' : 'pieces'}
                                 </p>
                             </div>
 
@@ -245,14 +275,22 @@ const Cart = () => {
                                 {cart.items.map(item => {
                                     const product = item.product
                                     const variantId = item.variant
-                                    const productId = product?._id
                                     const variantDetail = getVariantDetails(product, variantId)
                                     const imageUrl = getDisplayImage(product, variantDetail)
                                     const displayPrice = item.price ?? variantDetail?.price ?? product?.price
-                                    const qty = quantities[productId] ?? item.quantity ?? 1
+                                    const qty = Number(item.quantity) || 1
                                     const attributes = variantDetail?.attributes ?? {}
                                     const stock = variantDetail?.stock
-                                    const variantPrice = variantDetail?.price
+                                    const previousPrice = item.priceAtAddition
+                                    const currentAmount = Number(displayPrice?.amount)
+                                    const previousAmount = Number(previousPrice?.amount)
+                                    const hasPriceChange =
+                                        displayPrice &&
+                                        previousPrice &&
+                                        displayPrice.currency === previousPrice.currency &&
+                                        Number.isFinite(currentAmount) &&
+                                        Number.isFinite(previousAmount) &&
+                                        currentAmount !== previousAmount
 
                                     return (
                                         <div
@@ -325,6 +363,11 @@ const Cart = () => {
                                                             ? formatCurrency(displayPrice.amount, displayPrice.currency)
                                                             : '—'}
                                                     </p>
+                                                    {displayPrice && (
+                                                        <p className="text-[10px] uppercase tracking-[0.15em] mb-3" style={{ color: tokens.muted }}>
+                                                            Item total: {formatCurrency(currentAmount * qty, displayPrice.currency)}
+                                                        </p>
+                                                    )}
 
                                                     {/* Stock */}
                                                     {stock !== undefined && (
@@ -335,26 +378,27 @@ const Cart = () => {
                                                             {stock > 0 ? `${stock} in stock` : 'Out of stock'}
                                                         </p>
                                                     )}
+                                                    {stock !== undefined && qty > Number(stock) && (
+                                                        <p role="alert" className="mb-4 text-[10px] font-semibold text-red-600">
+                                                            Quantity exceeds available stock. Reduce the quantity before checkout.
+                                                        </p>
+                                                    )}
+                                                    {!variantDetail && (
+                                                        <p role="alert" className="mb-4 text-[10px] font-semibold text-red-600">
+                                                            This selected variant is no longer available.
+                                                        </p>
+                                                    )}
 
-                                                    {/* Price Difference */}
-                                                    {displayPrice && variantPrice &&
-                                                        displayPrice.amount !== variantPrice.amount && (
-                                                            <>
-                                                                {displayPrice.amount > variantPrice.amount
-                                                                    ? (
-                                                                        <p className="text-[10px] uppercase tracking-[0.15em] mb-4 text-green-800 font-bold">
-                                                                            You will get this at {formatCurrency(variantPrice.amount, variantPrice.currency)} save {Math.abs(variantPrice.amount - displayPrice.amount)}.
-                                                                        </p>
-                                                                    )
-                                                                    : (
-                                                                        <p className="text-[10px] uppercase tracking-[0.15em] mb-4 text-red-600 font-bold">
-                                                                            Warning this product will cost you {Math.abs(variantPrice.amount - displayPrice.amount)} more.
-                                                                        </p>
-                                                                    )
-                                                                }
-                                                            </>
-                                                        )
-                                                    }
+                                                    {hasPriceChange && currentAmount < previousAmount && (
+                                                        <p className="text-[10px] uppercase tracking-[0.15em] mb-4 text-green-800 font-bold">
+                                                            Hurray! You saved {formatPriceDifference(previousAmount - currentAmount, displayPrice.currency)} on this product!
+                                                        </p>
+                                                    )}
+                                                    {hasPriceChange && currentAmount > previousAmount && (
+                                                        <p className="text-[10px] uppercase tracking-[0.15em] mb-4 text-red-600 font-bold">
+                                                            The price of this product has increased by {formatPriceDifference(currentAmount - previousAmount, displayPrice.currency)}.
+                                                        </p>
+                                                    )}
                                                 </div>
 
                                                 {/* Bottom Row: Quantity + Remove */}
@@ -366,8 +410,9 @@ const Cart = () => {
                                                         style={{ border: `1px solid ${tokens.outlineVariant}` }}
                                                     >
                                                         <button
-                                                            id={`qty-dec-${productId}`}
-                                                            onClick={() => changeQty(productId, -1)}
+                                                            id={`qty-dec-${item._id}`}
+                                                            disabled={qty <= 1 || updatingItemIds.includes(item._id)}
+                                                            onClick={() => updateQuantity(item, -1)}
                                                             className="w-9 h-9 flex items-center justify-center text-sm font-light transition-colors hover:opacity-60"
                                                             style={{ color: tokens.onSurface, borderRight: `1px solid ${tokens.outlineVariant}` }}
                                                             aria-label="Decrease quantity"
@@ -383,8 +428,9 @@ const Cart = () => {
                                                         </span>
 
                                                         <button
-                                                            id={`qty-inc-${productId}`}
-                                                            onClick={() => handleIncrementCartItem({ productId, variantId })}
+                                                            id={`qty-inc-${item._id}`}
+                                                            disabled={updatingItemIds.includes(item._id) || (stock !== undefined && qty >= Number(stock))}
+                                                            onClick={() => updateQuantity(item, 1)}
                                                             className="w-9 h-9 flex items-center justify-center text-sm font-light transition-colors hover:opacity-60"
                                                             style={{ color: tokens.onSurface, borderLeft: `1px solid ${tokens.outlineVariant}` }}
                                                             aria-label="Increase quantity"
@@ -395,13 +441,17 @@ const Cart = () => {
 
                                                     {/* Remove */}
                                                     <button
-                                                        id={`remove-${productId}`}
+                                                        id={`remove-${item._id}`}
+                                                        onClick={() => removeItem(item._id)}
                                                         className="text-[10px] uppercase tracking-[0.22em] font-medium transition-all duration-200 hover:underline hover:opacity-70"
                                                         style={{ color: tokens.muted }}
                                                     >
                                                         Remove
                                                     </button>
                                                 </div>
+                                                {cartActionError && (
+                                                    <p role="alert" className="mt-4 text-sm text-red-700">{cartActionError}</p>
+                                                )}
                                             </div>
                                         </div>
                                     )
@@ -539,6 +589,8 @@ const Cart = () => {
                                         e.currentTarget.style.color = tokens.surface
                                     }}
                                     onClick={handleCheckout}
+                                    disabled={!canCheckout}
+                                    aria-disabled={!canCheckout}
                                 >
                                     Proceed to Checkout
                                 </button>

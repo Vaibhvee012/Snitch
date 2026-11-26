@@ -59,6 +59,8 @@ const SellerProductDetails = () => {
     handleUpdateProductPrice,
     handleUpdateProductVariantStock,
     handleUpdateProductVariantPrice,
+    handleUpdateProductVariant,
+    handleDeleteProductVariant,
   } = useProduct();
 
   // State
@@ -79,6 +81,8 @@ const SellerProductDetails = () => {
 
   // Create Variant Modal State
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [editingVariant, setEditingVariant] = useState(null);
+  const [deletingVariantIds, setDeletingVariantIds] = useState(new Set());
   const [isSubmittingVariant, setIsSubmittingVariant] = useState(false);
   const [variantPrice, setVariantPrice] = useState(""); // OPTIONAL
   const [variantStock, setVariantStock] = useState("10");
@@ -344,6 +348,38 @@ const SellerProductDetails = () => {
     }
   };
 
+  const openVariantEditor = (variant) => {
+    setEditingVariant(variant);
+    setAttributes(normalizeAttributes(variant.attributes));
+    setVariantPrice(String(variant.price?.amount ?? product?.price?.amount ?? ""));
+    setVariantStock(String(variant.stock ?? 0));
+    setVariantImages((variant.images || []).map(image => ({ url: image.url })));
+    setModalValidationErr("");
+    setIsAddModalOpen(true);
+  };
+
+  const handleDeleteVariant = async (variant) => {
+    if (!window.confirm("Delete only this product variant? This cannot be undone.")) return;
+
+    setDeletingVariantIds(ids => new Set(ids).add(variant._id));
+    try {
+      const result = await handleDeleteProductVariant(productId, variant._id);
+      applyServerProduct(result.product);
+      showToast("Variant deleted.");
+    } catch (error) {
+      showToast(
+        error.response?.data?.message || error.message || "Could not delete variant.",
+        "error"
+      );
+    } finally {
+      setDeletingVariantIds(ids => {
+        const next = new Set(ids);
+        next.delete(variant._id);
+        return next;
+      });
+    }
+  };
+
   // File drop / upload handling for variant images (up to 7 images)
   const handleAddFiles = async (files) => {
     setModalValidationErr("");
@@ -457,11 +493,19 @@ const SellerProductDetails = () => {
 
       // Check for duplicate attributes combination
       const isDuplicate = product?.variants?.some((v) => {
+        if (editingVariant && v._id === editingVariant._id) return false;
         const vAttrs = normalizeAttributes(v.attributes);
         const vKeys = Object.keys(vAttrs);
         const newKeys = Object.keys(cleanAttributesObject);
         if (vKeys.length !== newKeys.length) return false;
-        return newKeys.every((k) => vAttrs[k] === cleanAttributesObject[k]);
+        return newKeys.every((key) => {
+          const matchingKey = Object.keys(vAttrs).find(
+            candidate => candidate.toLocaleLowerCase() === key.toLocaleLowerCase()
+          );
+          return matchingKey &&
+            String(vAttrs[matchingKey]).toLocaleLowerCase() ===
+              String(cleanAttributesObject[key]).toLocaleLowerCase();
+        });
       });
 
       if (isDuplicate) {
@@ -484,20 +528,24 @@ const SellerProductDetails = () => {
         return;
       }
 
-      const result = await handleAddVariant(productId, {
+      const payload = {
         attributes: cleanAttributesObject,
         price: {
           amount: resolvedPriceAmount,
-          currency: product?.price?.currency || "INR",
+          currency: editingVariant?.price?.currency || product?.price?.currency || "INR",
         },
         stock,
         images: variantImages,
-      });
+      };
+      const result = editingVariant
+        ? await handleUpdateProductVariant(productId, editingVariant._id, payload)
+        : await handleAddVariant(productId, payload);
       applyServerProduct(result.product);
-      showToast("Variant created and saved.");
+      showToast(editingVariant ? "Variant updated and saved." : "Variant created and saved.");
 
       // Reset modal state
       setIsAddModalOpen(false);
+      setEditingVariant(null);
       setVariantPrice("");
       setVariantStock("10");
       variantImages.forEach((image) => {
@@ -735,6 +783,7 @@ const SellerProductDetails = () => {
                 type="button"
                 onClick={() => {
                   setModalValidationErr("");
+                  setEditingVariant(null);
                   setIsAddModalOpen(true);
                 }}
                 className="flex items-center gap-2 px-5 py-2.5 bg-[#1b1c1a] text-[#fbf9f6] text-[11px] uppercase tracking-[0.2em] font-medium hover:bg-[#C9A96E] hover:text-[#1b1c1a] transition-all duration-300 shadow-sm"
@@ -1020,6 +1069,7 @@ const SellerProductDetails = () => {
                   type="button"
                   onClick={() => {
                     setModalValidationErr("");
+                    setEditingVariant(null);
                     setIsAddModalOpen(true);
                   }}
                   className="px-4 py-2 bg-[#1b1c1a] text-[#fbf9f6] text-[10px] uppercase tracking-[0.2em] font-medium hover:bg-[#C9A96E] hover:text-[#1b1c1a] transition-all"
@@ -1156,6 +1206,7 @@ const SellerProductDetails = () => {
                     type="button"
                     onClick={() => {
                       setModalValidationErr("");
+                      setEditingVariant(null);
                       setIsAddModalOpen(true);
                     }}
                     className="px-6 py-3 bg-[#1b1c1a] text-[#fbf9f6] text-[11px] uppercase tracking-[0.2em] font-medium hover:bg-[#C9A96E] hover:text-[#1b1c1a] transition-all"
@@ -1181,6 +1232,7 @@ const SellerProductDetails = () => {
                       <th className="py-4 px-6">Price</th>
                       <th className="py-4 px-6 text-center">Status</th>
                       <th className="py-4 px-6">Stock Level & Quick Adjust</th>
+                      <th className="py-4 px-6">Actions</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-[#ede9e3] text-sm">
@@ -1412,6 +1464,26 @@ const SellerProductDetails = () => {
                             </div>
                           </td>
 
+                          <td className="py-4 px-6">
+                            <div className="flex flex-col gap-2">
+                              <button
+                                type="button"
+                                onClick={() => openVariantEditor(variant)}
+                                className="px-3 py-1.5 border border-[#ede9e3] text-[9px] uppercase tracking-wider hover:border-[#1b1c1a]"
+                              >
+                                Update
+                              </button>
+                              <button
+                                type="button"
+                                disabled={deletingVariantIds.has(variant._id)}
+                                onClick={() => handleDeleteVariant(variant)}
+                                className="px-3 py-1.5 border border-red-200 text-red-600 text-[9px] uppercase tracking-wider hover:bg-red-50 disabled:opacity-50"
+                              >
+                                {deletingVariantIds.has(variant._id) ? "Deleting..." : "Delete"}
+                              </button>
+                            </div>
+                          </td>
+
                         </tr>
                       );
                     })}
@@ -1422,7 +1494,7 @@ const SellerProductDetails = () => {
           </section>
         </main>
 
-        {/* ── CREATE VARIANT MODAL / DRAWER ── */}
+        {/* ── CREATE / UPDATE VARIANT MODAL ── */}
         {isAddModalOpen && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-200">
             <div className="bg-[#fbf9f6] border border-[#ede9e3] max-w-2xl w-full p-8 shadow-2xl relative max-h-[92vh] overflow-y-auto">
@@ -1442,10 +1514,10 @@ const SellerProductDetails = () => {
                   className="text-3xl font-light text-[#1b1c1a]"
                   style={{ fontFamily: "'Cormorant Garamond', serif" }}
                 >
-                  Create Product Variant
+                  {editingVariant ? "Update Product Variant" : "Create Product Variant"}
                 </h3>
                 <p className="text-xs text-[#7A6E63] mt-1">
-                  Attributes must be an <strong>Object</strong> (key-value pairs, at least 1 required). Images and price are optional.
+                  Attributes, price, and stock are saved to this product. Existing images are preserved unless changed here.
                 </p>
               </div>
 
@@ -1582,13 +1654,15 @@ const SellerProductDetails = () => {
                       className="w-full px-3 py-2 text-sm bg-[#fbf9f6] border border-[#ede9e3] focus:border-[#1b1c1a] focus:outline-none"
                     />
                     <span className="block text-[9px] text-[#B5ADA3] mt-1">
-                      Leave empty to automatically inherit master base price (₹{product?.price?.amount || 1499}).
+                      {editingVariant
+                        ? "Set the price for this variant."
+                        : `Leave empty to inherit the product price (₹${product?.price?.amount || 1499}).`}
                     </span>
                   </div>
 
                   <div className="bg-white border border-[#ede9e3] p-5">
                     <label className="block text-[10px] uppercase tracking-[0.2em] font-medium text-[#1b1c1a] mb-2">
-                      Initial Warehouse Stock
+                      {editingVariant ? "Warehouse Stock" : "Initial Warehouse Stock"}
                     </label>
                     <input
                       type="number"
@@ -1612,7 +1686,7 @@ const SellerProductDetails = () => {
                       Variant Images
                     </label>
                     <span className="text-[9px] uppercase text-[#7A6E63] bg-[#f5f3f0] px-1.5 py-0.5">
-                      Optional ({variantImages.length}/{MAX_VARIANT_IMAGES})
+                      {editingVariant ? "Optional" : "Optional"} ({variantImages.length}/{MAX_VARIANT_IMAGES})
                     </span>
                   </div>
                   <p className="text-[11px] text-[#7A6E63] mb-3">
@@ -1758,7 +1832,7 @@ const SellerProductDetails = () => {
                       {isSubmittingVariant && (
                         <span className="w-3.5 h-3.5 border-2 border-current border-t-transparent rounded-full animate-spin" />
                       )}
-                      <span>Save Variant Locally</span>
+                      <span>{editingVariant ? "Update Variant" : "Create Variant"}</span>
                     </button>
                   </div>
                 </div>

@@ -8,6 +8,13 @@ import paymentModel from "../models/payment.model.js";
 import { validatePaymentVerification } from "razorpay/dist/utils/razorpay-utils.js";
 import { config } from "../config/config.js";
 
+const getCartResponse = async userId =>
+    await getCartDetails(userId) || {
+        items: [],
+        totalPrice: 0,
+        totalQuantity: 0,
+        currency: "INR",
+    };
 
 export const addToCart = async (req, res) => {
 
@@ -50,7 +57,8 @@ export const addToCart = async (req, res) => {
 
         return res.status(200).json({
             message: "Cart updated successfully",
-            success: true
+            success: true,
+            cart: await getCartResponse(req.user._id),
         })
     }
 
@@ -65,30 +73,26 @@ export const addToCart = async (req, res) => {
         product: productId,
         variant: variantId,
         quantity,
-        price: product.price
+        price: product.variants.id(variantId).price,
+        priceAtAddition: product.variants.id(variantId).price,
     })
 
     await cart.save()
 
     return res.status(200).json({
         message: "Product added to cart successfully",
-        success: true
+        success: true,
+        cart: await getCartResponse(req.user._id),
     })
 }
 
 export const getCart = async (req, res) => {
     const user = req.user
 
-    let cart = await getCartDetails(user._id)
-
-    if (!cart) {
-        cart = await cartModel.create({ user: user._id })
-    }
-
     return res.status(200).json({
         message: "Cart fetched successfully",
         success: true,
-        cart
+        cart: await getCartResponse(user._id),
     })
 }
 
@@ -176,7 +180,7 @@ export const updateCartItemQuantity = async (req, res) => {
     return res.status(200).json({
         message: "Cart item quantity updated successfully",
         success: true,
-        cart: await getCartResponse(cart)
+        cart: await getCartResponse(req.user._id)
     });
 };
 
@@ -197,7 +201,7 @@ export const removeCartItem = async (req, res) => {
     return res.status(200).json({
         message: "Cart item removed successfully",
         success: true,
-        cart: await getCartResponse(cart)
+        cart: await getCartResponse(req.user._id)
     });
 };
 
@@ -209,6 +213,30 @@ export const createOrderController = async (req, res) => {
     if (!cart) {
         return res.status(400).json({
             message: "Cart is empty",
+            success: false
+        })
+    }
+
+    if (!cart.items.length || !Number.isFinite(cart.totalPrice) || cart.totalPrice <= 0) {
+        return res.status(400).json({
+            message: "Cart contains no purchasable items",
+            success: false
+        })
+    }
+
+    const invalidItem = cart.items.find(item =>
+        !item.product ||
+        !item.variant ||
+        typeof item.variant !== "object" ||
+        !Number.isInteger(Number(item.quantity)) ||
+        Number(item.quantity) < 1 ||
+        Number(item.quantity) > Number(item.variant.stock) ||
+        !Number.isFinite(Number(item.price?.amount)) ||
+        Number(item.price.amount) <= 0
+    );
+    if (invalidItem) {
+        return res.status(409).json({
+            message: "A cart item is unavailable or has insufficient stock. Refresh your cart before checkout.",
             success: false
         })
     }
@@ -227,13 +255,13 @@ export const createOrderController = async (req, res) => {
         orderItems: cart.items.map(item => ({
             title: item.product.title,
             productId: item.product._id,
-            variantId: item.variant,
+            variantId: item.variant?._id || item.variant,
             quantity: item.quantity,
-            images: item.product.variants.images || item.product.images,
+            images: item.variant?.images?.length ? item.variant.images : item.product.images,
             description: item.product.description,
             price: {
-                amount: item.product.variants.price.amount || item.product.price.amount,
-                currency: item.product.variants.price.currency || item.product.price.currency
+                amount: item.price.amount,
+                currency: item.price.currency
             }
         }))
     })

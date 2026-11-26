@@ -29,8 +29,11 @@ const cartSlice = createSlice({
                 ? payload
                 : payload?.items;
             state.items = Array.isArray(items) ? items : [];
-
-            state.totalQuantity = calculateTotalQuantity(state.items);
+            state.totalPrice = Array.isArray(payload) ? null : payload?.totalPrice ?? 0;
+            state.currency = Array.isArray(payload) ? null : payload?.currency ?? "INR";
+            state.totalQuantity = Array.isArray(payload)
+                ? calculateTotalQuantity(state.items)
+                : Number(payload?.totalQuantity) || calculateTotalQuantity(state.items);
         },
 
         addItem: (state, action) => {
@@ -116,6 +119,8 @@ const cartSlice = createSlice({
         clearCart: (state) => {
             state.items = [];
             state.totalQuantity = 0;
+            state.totalPrice = 0;
+            state.currency = "INR";
         },
     },
 });

@@ -9,7 +9,9 @@ import {
     addToCart,
     getCart,
     removeCartItem,
-    updateCartItemQuantity
+    updateCartItemQuantity,
+    createOrderController,
+    verifyOrderController,
 } from "../controllers/cart.controller.js";
 
 const router = express.Router();
@@ -45,6 +47,8 @@ router.delete("/:itemId", authenticateUser, validateRemoveCartItem, removeCartIt
  * @argument currency - The currency for the order (default is INR)
  */
 
-router.post("/payment/create/order", authenticateUser)
+router.post("/payment/create/order", authenticateUser, createOrderController)
+
+router.post("/payment/verify/order", authenticateUser, verifyOrderController)
 
 export default router;

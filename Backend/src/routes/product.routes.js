@@ -14,6 +14,8 @@ import {
     updateProductPrice,
     updateProductVariantStock,
     updateProductVariantPrice,
+    updateProductVariant,
+    deleteProductVariant,
 } from "../controllers/product.controller.js";
 
 const router = express.Router();
@@ -58,6 +60,17 @@ router.patch(
     "/:productId/variants/:variantId/price",
     authenticateSeller,
     updateProductVariantPrice
+);
+router.patch(
+    "/:productId/variants/:variantId",
+    authenticateSeller,
+    upload.array("images", 7),
+    updateProductVariant
+);
+router.delete(
+    "/:productId/variants/:variantId",
+    authenticateSeller,
+    deleteProductVariant
 );
 
 // Add a product variant
