@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { useSelector } from 'react-redux'
 import { useCart } from '../hooks/useCart'
 import { Link, useNavigate } from 'react-router-dom'
-import { useRazorpay } from "react-razorpay";
+import { useRazorpay } from "react-razorpay"
 
 /* ─── Inline styles & tokens matching the "Avenue Montaigne" design system ─── */
 const tokens = {
@@ -22,139 +22,119 @@ const tokens = {
 }
 
 const Cart = () => {
-    const cart = useSelector(state => state.cart) ?? { items: [] }
-    const cartItems = Array.isArray(cart.items) ? cart.items : []
+    const cart = useSelector(state => state.cart)
     const {
         handleGetCart,
         handleIncrementCartItem,
-        handleDecrementCartItem,
-        handleRemoveCartItem,
         handleCreateCartOrder,
-        handleVerifyCartOrder,
+        handleVerifyCartOrder
     } = useCart()
-    const navigate = useNavigate()
-    const { Razorpay } = useRazorpay();
-    const user = useSelector(state => state.auth?.user)
 
-    const [cartActionError, setCartActionError] = useState("")
-    const [isLoadingCart, setIsLoadingCart] = useState(true)
+    const navigate = useNavigate()
+    const { Razorpay } = useRazorpay()
+    const user = useSelector(state => state.user)
+
+    /* Local quantity state — key: cartItem._id, value: number */
+    const [quantities, setQuantities] = useState({})
 
     useEffect(() => {
-        handleGetCart().catch((requestError) => {
-            setCartActionError(requestError.response?.data?.message || requestError.message || "Could not load your cart.");
-        }).finally(() => {
-            setIsLoadingCart(false)
-        })
+        handleGetCart()
     }, [handleGetCart])
 
+    const changeQty = (id, delta) => {
+        setQuantities(prev => ({
+            ...prev,
+            [id]: Math.max(1, (prev[id] ?? 1) + delta),
+        }))
+    }
+
     /* ─── Helpers ─── */
-    
-const getVariantDetails = (product, variantReference) => {
-    if (!product?.variants || !variantReference) return null;
+    const getVariantDetails = (product, variantId) => {
+        if (!product?.variants || !variantId) return null
 
-    const variantId =
-        typeof variantReference === "object"
-            ? variantReference._id
-            : variantReference;
+        const id = typeof variantId === 'object'
+            ? variantId._id
+            : variantId
 
-    if (Array.isArray(product.variants)) {
-        return product.variants.find(
-            variant =>
-                variant._id?.toString() === variantId?.toString()
-        ) || null;
+        if (Array.isArray(product.variants)) {
+            return product.variants.find(
+                variant => variant._id?.toString() === id?.toString()
+            ) || null
+        }
+
+        if (product.variants._id?.toString() === id?.toString()) {
+            return product.variants
+        }
+
+        return null
     }
-
-    if (
-        product.variants._id?.toString() === variantId?.toString()
-    ) {
-        return product.variants;
-    }
-
-    return null;
-};
-
 
     const getDisplayImage = (product, variant) => {
-        if (variant?.images?.length) return variant.images[ 0 ].url
-        if (product?.images?.length) return product.images[ 0 ].url
+        if (variant?.images?.length) return variant.images[0].url
+        if (product?.images?.length) return product.images[0].url
         return null
     }
 
     const formatCurrency = (amount, currency = 'INR') =>
-        `${currency} ${Number(amount).toLocaleString('en-IN')}`
+        `${currency} ${Number(amount || 0).toLocaleString('en-IN')}`
 
-    const cartSubtotal = cartItems.reduce((total, item) => {
-        const price = item.price ?? item.variant?.price ?? item.product?.price
-        return total + (Number(price?.amount) || 0) * (Number(item.quantity) || 1)
-    }, 0)
-    const hasUnavailableCartItems = cartItems.some((item) => {
-        const variant = getVariantDetails(item.product, item.variant)
-        const quantity = Number(item.quantity) || 1
-        return !item.product || !variant || Number(variant.stock ?? 0) < quantity
-    })
-
-    if (isLoadingCart && !cartItems.length) {
-        return (
-            <div className="min-h-screen flex items-center justify-center" style={{ backgroundColor: tokens.surface }}>
-                <p className="text-[10px] uppercase tracking-[0.2em] animate-pulse" style={{ color: tokens.muted }}>
-                    Updating your selection...
-                </p>
-            </div>
-        )
-    }
-
-    const updateCartItem = async (action) => {
-        setCartActionError("")
+    async function handleCheckout() {
         try {
-            await action()
-        } catch (requestError) {
-            setCartActionError(requestError.response?.data?.message || requestError.message || "Could not update your cart.");
+            const order = await handleCreateCartOrder()
+            console.log(order)
+
+            if (!order) {
+                throw new Error('Unable to create order')
+            }
+
+            const options = {
+                key: "rzp_test_ShNSkpxt3emQVJ",
+                amount: order.amount,
+                currency: order.currency,
+                name: "Snitch",
+                description: "Test Transaction",
+                order_id: order.id,
+
+                handler: async (response) => {
+                    try {
+                        const isValid = await handleVerifyCartOrder(response)
+
+                        if (isValid) {
+                            navigate(`/order-success?order_id=${response?.razorpay_order_id}`)
+                        }
+                    } catch (verificationError) {
+                        console.error('Payment verification failed:', verificationError)
+                    }
+                },
+
+                prefill: {
+                    name: user?.fullname,
+                    email: user?.email,
+                    contact: user?.contact,
+                },
+
+                theme: {
+                    color: tokens.primary,
+                },
+            }
+
+            const razorpayInstance = new Razorpay(options)
+            razorpayInstance.open()
+
+        } catch (checkoutError) {
+            console.error('Checkout error:', checkoutError)
         }
     }
 
-
-    async function handleCheckout() {
-        const order = await handleCreateCartOrder()
-        console.log(order)
-
-
-        const options = {
-            key: "rzp_test_ShNSkpxt3emQVJ",
-            amount: order.amount, // Amount in paise
-            currency: order.currency,
-            name: "Snitch",
-            description: "Test Transaction",
-            order_id: order.id, // Generate order_id on server
-            handler: async (response) => {
-
-                const isValid = await handleVerifyCartOrder(response)
-
-                if (isValid) {
-                    navigate(`/order-success?order_id=${response?.razorpay_order_id}`)
-                }
-            },
-            prefill: {
-                name: user?.fullname,
-                email: user?.email,
-                contact: user?.contact,
-            },
-            theme: {
-                color: tokens.primary,
-            },
-        };
-
-        const razorpayInstance = new Razorpay(options);
-        razorpayInstance.open();
-    }
-
     /* ─── Empty state ─── */
-    if (!cartItems.length) {
+    if (!cart?.items?.length) {
         return (
             <>
                 <link
                     href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;1,300;1,400&family=Inter:wght@300;400;500;600&display=swap"
                     rel="stylesheet"
                 />
+
                 <div
                     className="min-h-screen flex flex-col"
                     style={{ backgroundColor: tokens.surface, fontFamily: "'Inter', sans-serif" }}
@@ -171,6 +151,7 @@ const getVariantDetails = (product, variantReference) => {
                         >
                             Snitch.
                         </Link>
+
                         <button
                             onClick={() => navigate(-1)}
                             className="text-[10px] uppercase tracking-[0.22em] font-medium transition-colors hover:opacity-70"
@@ -187,17 +168,14 @@ const getVariantDetails = (product, variantReference) => {
                         >
                             Your selection is empty.
                         </p>
+
                         <p
                             className="text-[10px] uppercase tracking-[0.22em]"
                             style={{ color: tokens.muted }}
                         >
                             Curate your collection
                         </p>
-                        {cartActionError && (
-                            <p role="alert" className="max-w-md text-center text-sm text-red-700">
-                                {cartActionError}
-                            </p>
-                        )}
+
                         <Link
                             to="/"
                             className="mt-4 px-10 py-4 text-[11px] uppercase tracking-[0.25em] font-medium transition-all duration-300"
@@ -234,16 +212,13 @@ const getVariantDetails = (product, variantReference) => {
                 className="min-h-screen pb-24 selection:bg-[#C9A96E]/30"
                 style={{ backgroundColor: tokens.surface, fontFamily: "'Inter', sans-serif" }}
             >
-
-
-                {/* ── Main Content ── */}
+                {/* Main Content */}
                 <div className="max-w-7xl mx-auto px-8 lg:px-16 xl:px-24 pt-12 lg:pt-20">
                     <div className="flex flex-col lg:flex-row gap-12 lg:gap-20 items-start">
 
-                        {/* ═══════════════════════════════════════════════
-                            LEFT COLUMN — Cart Items (65%)
-                        ═══════════════════════════════════════════════ */}
+                        {/* LEFT COLUMN — Cart Items */}
                         <div className="w-full lg:w-[65%]">
+
                             {/* Heading */}
                             <div className="mb-10">
                                 <h1
@@ -256,36 +231,28 @@ const getVariantDetails = (product, variantReference) => {
                                 >
                                     Your Selection
                                 </h1>
+
                                 <p
                                     className="text-[10px] uppercase tracking-[0.24em] font-medium"
                                     style={{ color: tokens.muted }}
                                 >
-                                    {cartItems.length} {cartItems.length === 1 ? 'piece' : 'pieces'}
+                                    {cart?.items?.length} {cart?.items?.length === 1 ? 'piece' : 'pieces'}
                                 </p>
                             </div>
-                            {cartActionError && (
-                                <p role="alert" className="mb-6 border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
-                                    {cartActionError}
-                                </p>
-                            )}
 
-                            {/* ── Cart Item List ── */}
+                            {/* Cart Item List */}
                             <div className="flex flex-col gap-6">
-                                {cartItems.map(item => {
+                                {cart.items.map(item => {
                                     const product = item.product
-                                    const variantId = item.variant?._id || item.variant
-                                    const variantDetail = getVariantDetails(product, item.variant)
+                                    const variantId = item.variant
+                                    const productId = product?._id
+                                    const variantDetail = getVariantDetails(product, variantId)
                                     const imageUrl = getDisplayImage(product, variantDetail)
                                     const displayPrice = item.price ?? variantDetail?.price ?? product?.price
-                                    const originalPrice = item.priceAtAddition ?? item.price
-                                    const qty = item.quantity ?? 1
+                                    const qty = quantities[productId] ?? item.quantity ?? 1
                                     const attributes = variantDetail?.attributes ?? {}
                                     const stock = variantDetail?.stock
-                                    const priceDifference = originalPrice && displayPrice &&
-                                        originalPrice.currency === displayPrice.currency
-                                        ? Number(originalPrice.amount) - Number(displayPrice.amount)
-                                        : 0
-
+                                    const variantPrice = variantDetail?.price
 
                                     return (
                                         <div
@@ -328,13 +295,13 @@ const getVariantDetails = (product, variantReference) => {
                                                             color: tokens.onSurface,
                                                         }}
                                                     >
-                                                        {product?.title || "Product unavailable"}
+                                                        {product?.title}
                                                     </h2>
 
                                                     {/* Variant Attribute Chips */}
                                                     {Object.keys(attributes).length > 0 && (
                                                         <div className="flex flex-wrap gap-2 mb-3">
-                                                            {Object.entries(attributes).map(([ key, val ]) => (
+                                                            {Object.entries(attributes).map(([key, val]) => (
                                                                 <span
                                                                     key={key}
                                                                     className="px-3 py-1 text-[9px] uppercase tracking-[0.18em] font-medium"
@@ -356,16 +323,11 @@ const getVariantDetails = (product, variantReference) => {
                                                     >
                                                         {displayPrice
                                                             ? formatCurrency(displayPrice.amount, displayPrice.currency)
-                                                            : 'Price unavailable'}
+                                                            : '—'}
                                                     </p>
-                                                    {displayPrice && (
-                                                        <p className="mb-2 text-[10px] uppercase tracking-[0.14em]" style={{ color: tokens.secondary }}>
-                                                            Item total: {formatCurrency(Number(displayPrice.amount) * qty, displayPrice.currency)}
-                                                        </p>
-                                                    )}
 
                                                     {/* Stock */}
-                                                    {stock !== undefined && product && (
+                                                    {stock !== undefined && (
                                                         <p
                                                             className="text-[10px] uppercase tracking-[0.15em] mb-4"
                                                             style={{ color: tokens.muted }}
@@ -373,69 +335,56 @@ const getVariantDetails = (product, variantReference) => {
                                                             {stock > 0 ? `${stock} in stock` : 'Out of stock'}
                                                         </p>
                                                     )}
-                                                    {priceDifference !== 0 && (
-                                                        priceDifference > 0 ? (
-                                                            <div className="mb-4 border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-800">
-                                                                <p className="font-medium">
-                                                                    <span aria-hidden="true" className="mr-1">✓</span>
-                                                                    Hurray! You save {formatCurrency(priceDifference, displayPrice.currency)} per item.
-                                                                </p>
-                                                                <p className="mt-1">
-                                                                    Get it for {formatCurrency(displayPrice.amount, displayPrice.currency)} now!
-                                                                    {" "}Was{" "}
-                                                                    <span className="line-through">
-                                                                        {formatCurrency(originalPrice.amount, originalPrice.currency)}
-                                                                    </span>
-                                                                </p>
-                                                                <p className="mt-1 font-semibold">
-                                                                    You save {formatCurrency(priceDifference * qty, displayPrice.currency)} in total.
-                                                                </p>
-                                                            </div>
-                                                        ) : (
-                                                            <div className="mb-4 border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-800">
-                                                                <p className="font-medium">
-                                                                    <span aria-hidden="true" className="mr-1">!</span>
-                                                                    Price increased by {formatCurrency(Math.abs(priceDifference), displayPrice.currency)} per item.
-                                                                </p>
-                                                                <p className="mt-1">
-                                                                    The new price is {formatCurrency(displayPrice.amount, displayPrice.currency)}.
-                                                                    {" "}Previous price:{" "}
-                                                                    <span className="line-through">
-                                                                        {formatCurrency(originalPrice.amount, originalPrice.currency)}
-                                                                    </span>
-                                                                </p>
-                                                            </div>
+
+                                                    {/* Price Difference */}
+                                                    {displayPrice && variantPrice &&
+                                                        displayPrice.amount !== variantPrice.amount && (
+                                                            <>
+                                                                {displayPrice.amount > variantPrice.amount
+                                                                    ? (
+                                                                        <p className="text-[10px] uppercase tracking-[0.15em] mb-4 text-green-800 font-bold">
+                                                                            You will get this at {formatCurrency(variantPrice.amount, variantPrice.currency)} save {Math.abs(variantPrice.amount - displayPrice.amount)}.
+                                                                        </p>
+                                                                    )
+                                                                    : (
+                                                                        <p className="text-[10px] uppercase tracking-[0.15em] mb-4 text-red-600 font-bold">
+                                                                            Warning this product will cost you {Math.abs(variantPrice.amount - displayPrice.amount)} more.
+                                                                        </p>
+                                                                    )
+                                                                }
+                                                            </>
                                                         )
-                                                    )}
+                                                    }
                                                 </div>
 
                                                 {/* Bottom Row: Quantity + Remove */}
                                                 <div className="flex items-center justify-between flex-wrap gap-4">
+
                                                     {/* Quantity Stepper */}
                                                     <div
                                                         className="flex items-center"
                                                         style={{ border: `1px solid ${tokens.outlineVariant}` }}
                                                     >
                                                         <button
-                                                            id={`qty-dec-${item._id}`}
-                                                            disabled={qty <= 1 || !product}
-                                                            onClick={() => updateCartItem(() => handleDecrementCartItem({ itemId: item._id, currentQty: qty }))}
+                                                            id={`qty-dec-${productId}`}
+                                                            onClick={() => changeQty(productId, -1)}
                                                             className="w-9 h-9 flex items-center justify-center text-sm font-light transition-colors hover:opacity-60"
                                                             style={{ color: tokens.onSurface, borderRight: `1px solid ${tokens.outlineVariant}` }}
                                                             aria-label="Decrease quantity"
                                                         >
                                                             −
                                                         </button>
+
                                                         <span
                                                             className="w-10 text-center text-[11px] tracking-[0.12em] font-medium select-none"
                                                             style={{ color: tokens.onSurface }}
                                                         >
                                                             {qty}
                                                         </span>
+
                                                         <button
-                                                            id={`qty-inc-${item._id}`}
-                                                            disabled={!product}
-                                                            onClick={() => updateCartItem(() => handleIncrementCartItem({ itemId: item._id, productId: product?._id, variantId, currentQty: qty }))}
+                                                            id={`qty-inc-${productId}`}
+                                                            onClick={() => handleIncrementCartItem({ productId, variantId })}
                                                             className="w-9 h-9 flex items-center justify-center text-sm font-light transition-colors hover:opacity-60"
                                                             style={{ color: tokens.onSurface, borderLeft: `1px solid ${tokens.outlineVariant}` }}
                                                             aria-label="Increase quantity"
@@ -446,8 +395,7 @@ const getVariantDetails = (product, variantReference) => {
 
                                                     {/* Remove */}
                                                     <button
-                                                        id={`remove-${item._id}`}
-                                                        onClick={() => updateCartItem(() => handleRemoveCartItem(item._id))}
+                                                        id={`remove-${productId}`}
                                                         className="text-[10px] uppercase tracking-[0.22em] font-medium transition-all duration-200 hover:underline hover:opacity-70"
                                                         style={{ color: tokens.muted }}
                                                     >
@@ -469,10 +417,12 @@ const getVariantDetails = (product, variantReference) => {
                                     <p className="font-medium mb-1" style={{ color: tokens.secondary }}>Shipping</p>
                                     <p>Complimentary over INR 15,000</p>
                                 </div>
+
                                 <div>
                                     <p className="font-medium mb-1" style={{ color: tokens.secondary }}>Returns</p>
                                     <p>Within 14 days of delivery</p>
                                 </div>
+
                                 <div>
                                     <p className="font-medium mb-1" style={{ color: tokens.secondary }}>Authenticity</p>
                                     <p>100% Guaranteed</p>
@@ -480,9 +430,7 @@ const getVariantDetails = (product, variantReference) => {
                             </div>
                         </div>
 
-                        {/* ═══════════════════════════════════════════════
-                            RIGHT COLUMN — Order Summary (35%, Sticky)
-                        ═══════════════════════════════════════════════ */}
+                        {/* RIGHT COLUMN — Order Summary */}
                         <div className="w-full lg:w-[35%] lg:sticky lg:top-28">
                             <div
                                 className="p-8"
@@ -512,11 +460,12 @@ const getVariantDetails = (product, variantReference) => {
                                         >
                                             Subtotal
                                         </span>
+
                                         <span
                                             className="text-[11px] uppercase tracking-[0.12em] font-medium"
                                             style={{ color: tokens.onSurface }}
                                         >
-                                            {formatCurrency(cartSubtotal)}
+                                            {formatCurrency(cart.totalPrice)}
                                         </span>
                                     </div>
 
@@ -527,11 +476,12 @@ const getVariantDetails = (product, variantReference) => {
                                         >
                                             Shipping
                                         </span>
+
                                         <span
                                             className="text-[10px] uppercase tracking-[0.1em]"
-                                            style={{ color: cartSubtotal >= 15000 ? '#5a7a5a' : tokens.muted }}
+                                            style={{ color: cart.totalPrice >= 15000 ? '#5a7a5a' : tokens.muted }}
                                         >
-                                            {cartSubtotal >= 15000 ? 'Complimentary' : `Complimentary over INR 15,000`}
+                                            {cart.totalPrice >= 15000 ? 'Complimentary' : 'Complimentary over INR 15,000'}
                                         </span>
                                     </div>
 
@@ -542,6 +492,7 @@ const getVariantDetails = (product, variantReference) => {
                                         >
                                             Duties & Taxes
                                         </span>
+
                                         <span
                                             className="text-[10px] uppercase tracking-[0.1em]"
                                             style={{ color: tokens.muted }}
@@ -562,28 +513,22 @@ const getVariantDetails = (product, variantReference) => {
                                     >
                                         Total
                                     </span>
+
                                     <span
                                         className="text-base uppercase tracking-[0.18em] font-medium"
                                         style={{ color: tokens.onSurface }}
                                     >
-                                        {formatCurrency(cartSubtotal)}
+                                        {formatCurrency(cart.totalPrice)}
                                     </span>
                                 </div>
 
                                 {/* Primary CTA */}
-                                {hasUnavailableCartItems && (
-                                    <p role="alert" className="mb-3 text-xs text-red-700">
-                                        One or more items are unavailable or exceed current stock. Update or remove them before checkout.
-                                    </p>
-                                )}
                                 <button
                                     id="proceed-checkout"
-                                    disabled={hasUnavailableCartItems}
                                     className="w-full py-4 mb-3 text-[11px] uppercase tracking-[0.25em] font-medium transition-all duration-300"
                                     style={{
-                                        backgroundColor: hasUnavailableCartItems ? tokens.muted : tokens.onSurface,
+                                        backgroundColor: tokens.onSurface,
                                         color: tokens.surface,
-                                        cursor: hasUnavailableCartItems ? "not-allowed" : "pointer",
                                     }}
                                     onMouseEnter={e => {
                                         e.currentTarget.style.backgroundColor = tokens.primary
@@ -627,7 +572,6 @@ const getVariantDetails = (product, variantReference) => {
                                 </p>
                             </div>
                         </div>
-
                     </div>
                 </div>
             </div>

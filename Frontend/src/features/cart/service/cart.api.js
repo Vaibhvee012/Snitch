@@ -50,6 +50,7 @@ export const verifyCartOrder = async (payload) => {
 };
 
 export const incrementCartItem = async ({ productId, variantId }) => {
-    const response = await cartApiInstance.post(`/increment/${productId}/${variantId}`);
+    const response = await cartApiInstance.post(`/increment/${productId}/${variantId}`)
     return response.data
 }
+
