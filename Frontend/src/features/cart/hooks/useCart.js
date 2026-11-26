@@ -60,7 +60,7 @@ export const useCart = () => {
 
     const handleVerifyCartOrder = useCallback(async (payload) => {
         const data = await verifyCartOrder(payload);
-        return data.success;
+        return data.success
     }, []);
 
     return {
